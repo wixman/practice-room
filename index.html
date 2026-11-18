@@ -120,6 +120,7 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
 .tag{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--surface-2);font-size:12px;color:var(--ink)}
 .tag::before{content:"#";opacity:.45}
 .cdot{display:inline-flex;align-items:center;gap:5px}
+.mtag{display:inline-block;padding:1px 8px;border-radius:999px;font:600 10.5px var(--f-mono);letter-spacing:.04em;color:var(--cool);border:1px solid color-mix(in srgb,var(--cool) 45%,transparent)}
 .cdot::before{content:"";width:7px;height:7px;border-radius:50%;background:hsl(var(--hue,40) 75% 58%)}
 .acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .acts .grow{flex:1}
@@ -266,8 +267,8 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
           <button class="btn small" id="renameColBtn" type="button">Rename</button>
           <button class="btn small danger" id="deleteColBtn" type="button">Delete</button>
         </div>
-        <label class="btn primary" for="fileInput">Import MusicXML</label>
-        <input type="file" id="fileInput" accept=".mxl,.musicxml,.xml,application/vnd.recordare.musicxml,application/vnd.recordare.musicxml+xml,application/xml,text/xml" multiple hidden>
+        <label class="btn primary" for="fileInput" title="MusicXML scores, plus optional MIDI files with matching names">Import MusicXML / MIDI</label>
+        <input type="file" id="fileInput" accept=".mxl,.musicxml,.xml,.mid,.midi,application/vnd.recordare.musicxml,application/vnd.recordare.musicxml+xml,application/xml,text/xml,audio/midi,audio/x-midi" multiple hidden>
       </div>
       <div class="tools">
         <input type="search" id="search" placeholder="Search titles and tags" aria-label="Search">
@@ -476,6 +477,58 @@ function parseScore(xml){
   const total= measures.length? measures[measures.length-1].q+measures[measures.length-1].len : 0;
   return {title,notes,measures,tempos,hasRepeats,hands:[...hands],totalQ:total};
 }
+/* ================= MIDI files (playback performances) ================= */
+function b64ToBuf(b64){ const bin=atob(b64), u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u.buffer; }
+function bufToB64(buf){ const u=new Uint8Array(buf); let s=""; for(let i=0;i<u.length;i+=0x8000) s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000)); return btoa(s); }
+function parseMidiFile(buf){
+  const d=new DataView(buf); const tag=o=>String.fromCharCode(d.getUint8(o),d.getUint8(o+1),d.getUint8(o+2),d.getUint8(o+3));
+  if(buf.byteLength<14||tag(0)!=="MThd") throw new Error("This isn't a standard MIDI file.");
+  const ntr=d.getUint16(10), div=d.getUint16(12);
+  if(div&0x8000) throw new Error("MIDI files with SMPTE timing aren't supported.");
+  let p=8+d.getUint32(4); const notes=[]; let tr=0;
+  while(p+8<=buf.byteLength&&tr<ntr){
+    const len=d.getUint32(p+4); const isTrk=tag(p)==="MTrk"; let q=p+8; const end=Math.min(q+len,buf.byteLength); p=q+len; if(!isTrk) continue;
+    let tick=0, rs=0; const on=new Map(), pedal=new Array(16).fill(false), held=Array.from({length:16},()=>[]);
+    const vlq=()=>{ let v=0,b; do{ b=d.getUint8(q++); v=(v*128)+(b&0x7f); }while(b&0x80&&q<end); return v; };
+    while(q<end){
+      tick+=vlq(); if(q>=end) break; let st=d.getUint8(q);
+      if(st&0x80){ q++; if(st<0xF0) rs=st; } else st=rs;
+      if(st===0xFF){ q++; const l=vlq(); q+=l; continue; }
+      if(st===0xF0||st===0xF7){ const l=vlq(); q+=l; continue; }
+      const cmd=st&0xF0, ch=st&0x0F; const a=d.getUint8(q++); const b=(cmd===0xC0||cmd===0xD0)?0:d.getUint8(q++);
+      if(cmd===0x90&&b>0){ const k=ch*128+a;
+        const hi=held[ch].findIndex(n=>n.midi===a); if(hi>=0){ held[ch][hi].end=tick; held[ch].splice(hi,1); } // re-struck while the pedal held it
+        const n={tick,end:null,midi:a,vel:b/127,ch,track:tr}; notes.push(n); if(!on.has(k)) on.set(k,[]); on.get(k).push(n); }
+      else if(cmd===0x80||cmd===0x90){ const k=ch*128+a, list=on.get(k); if(!list||!list.length) continue; const n=list.shift(); if(pedal[ch]) held[ch].push(n); else n.end=tick; }
+      else if(cmd===0xB0&&a===64){ const down=b>=64; if(!down){ for(const n of held[ch]) n.end=tick; held[ch]=[]; } pedal[ch]=down; }
+    }
+    for(const list of on.values()) for(const n of list) n.end=tick;
+    for(const h of held) for(const n of h) n.end=tick;
+    tr++;
+  }
+  if(!notes.length) throw new Error("This MIDI file has no notes.");
+  return notes.map(n=>({q:n.tick/div,dq:Math.max(1/32,(n.end-n.tick)/div),midi:n.midi,vel:n.vel,track:n.track})).sort((x,y)=>x.q-y.q);
+}
+/* give every MIDI note a hand by matching it to the nearest score note of the same pitch */
+function alignMidi(mnotes,score){
+  const byPitch=new Map(); for(const n of score.notes){ if(!byPitch.has(n.midi)) byPitch.set(n.midi,[]); byPitch.get(n.midi).push(n); }
+  const tracks=[...new Set(mnotes.map(n=>n.track))]; let matched=0;
+  const out=mnotes.map(n=>{ let best=null,bd=.6; for(const s of byPitch.get(n.midi)||[]){ const dd=Math.abs(s.q-n.q); if(dd<bd){bd=dd;best=s;} }
+    if(best&&bd<.25) matched++;
+    const hand= best?best.hand : tracks.length>=2 ? (n.track===tracks[0]?"R":"L") : (n.midi>=60?"R":"L");
+    return {...n,hand}; });
+  return {notes:out,match:out.length?matched/out.length:0};
+}
+function pieceMidi(p,score){ if(!p.midi||(p.settings&&p.settings.useMidi===false)) return null;
+  try{ return alignMidi(parseMidiFile(b64ToBuf(p.midi.b64)),score); }catch(e){ console.warn(e); return null; } }
+const normName=s=>String(s||"").toLowerCase().replace(/\.(mxl|musicxml|xml|midi?)$/,"").replace(/unfolded|expanded/g,"").replace(/[^a-z0-9]/g,"");
+function matchPieceForMidi(fileName,prefer){
+  const k=normName(fileName); if(!k) return null; const pools=[prefer,S.pieces];
+  for(const pool of pools){ const exact=pool.filter(p=>normName(p.fileName)===k||normName(p.title)===k); if(exact.length===1) return exact[0]; }
+  for(const pool of pools){ const near=pool.filter(p=>{ const a=normName(p.fileName); return a&&(a.startsWith(k)||k.startsWith(a)); }); if(near.length===1) return near[0]; }
+  return null;
+}
+
 /* swing + tempo map → seconds */
 function makeClock(score,tempoPct,swing,baseBpm){
   const map=(score.tempos.length?score.tempos:[{q:0,bpm:baseBpm}]).map(t=>({q:t.q,bpm:(baseBpm&&!score.tempos.length?baseBpm:t.bpm)}));
@@ -721,7 +774,7 @@ function renderLibrary(){
           ${p.sample?'<div class="sample">Sample piece</div>':""}
           <div class="t">${esc(p.title)}</div>
           <div class="meta"><span>${best}</span><span>${ago(p.lastPlayed)}</span></div>
-          <div class="meta">${(p.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}${!col?cols.map(c=>`<span class="cdot" style="--hue:${hueOf(c.id)}">${esc(c.name)}</span>`).join(""):""}</div>
+          <div class="meta">${p.midi?`<span class="mtag" title="${esc(p.midi.name)}">${p.settings&&p.settings.useMidi===false?"MIDI off":"MIDI"}</span>`:""}${(p.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}${!col?cols.map(c=>`<span class="cdot" style="--hue:${hueOf(c.id)}">${esc(c.name)}</span>`).join(""):""}</div>
         </div>
         <div class="acts">
           <button class="btn small" type="button" data-open="practice">Practice</button>
@@ -745,18 +798,25 @@ $("#pieceList").onclick=async e=>{
 };
 $("#fileInput").onchange=async e=>{
   const files=[...e.target.files]; e.target.value=""; if(!files.length) return;
-  const col=S.collections.find(c=>c.id===S.view.list); let ok=0; const errs=[]; let repeats=0;
-  for(const f of files){
+  const col=S.collections.find(c=>c.id===S.view.list); let ok=0; const errs=[]; let repeats=0; const added=[]; let attached=0;
+  const isMidi=f=>/\.midi?$/i.test(f.name)||/midi/i.test(f.type);
+  for(const f of files.filter(f=>!isMidi(f))){
     try{ const xml=await fileToXML(await f.arrayBuffer(),f.name); const sc=parseScore(xml); if(!sc.notes.length) throw new Error("no notes found");
       if(sc.hasRepeats) repeats++;
       const p={id:uid(),title:sc.title||f.name.replace(/\.(mxl|musicxml|xml)$/i,"").replace(/[_-]+/g," "),fileName:f.name,xml,added:Date.now(),tags:[],attempts:[],lastPlayed:null,plays:0,settings:{}};
-      S.pieces.push(p); await savePiece(p); if(col){ col.pieceIds.push(p.id); } ok++;
+      S.pieces.push(p); await savePiece(p); added.push(p); if(col){ col.pieceIds.push(p.id); } ok++;
+    }catch(err){ errs.push(`${f.name}: ${err.message}`); }
+  }
+  for(const f of files.filter(isMidi)){
+    try{ const buf=await f.arrayBuffer(); parseMidiFile(buf); const p=matchPieceForMidi(f.name,added);
+      if(!p) throw new Error("no piece with a matching name. Open the piece's Edit and attach it there.");
+      p.midi={name:f.name,b64:bufToB64(buf)}; p.settings={...(p.settings||{}),useMidi:true}; await savePiece(p); attached++;
     }catch(err){ errs.push(`${f.name}: ${err.message}`); }
   }
   if(col) await saveCol(col);
   renderLibrary();
-  if(errs.length) sheet(`<h2>Some files didn't import</h2><p>${ok} imported.</p><ul>${errs.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><div class="row end"><button class="btn primary" data-close>OK</button></div>`);
-  else toast(`Imported ${ok} piece${ok===1?"":"s"}${col?` into ${col.name}`:""}${repeats?` · ${repeats} with repeat signs: expand repeats for accurate scoring`:""}`);
+  if(errs.length) sheet(`<h2>Some files didn't import</h2><p>${ok} piece${ok===1?"":"s"} imported${attached?`, ${attached} MIDI file${attached===1?"":"s"} attached`:""}.</p><ul>${errs.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><div class="row end"><button class="btn primary" data-close>OK</button></div>`);
+  else toast(`${ok?`Imported ${ok} piece${ok===1?"":"s"}${col?` into ${col.name}`:""}`:""}${ok&&attached?" · ":""}${attached?`${attached} MIDI file${attached===1?"":"s"} attached`:""}${repeats?` · ${repeats} with repeat signs: expand repeats for accurate scoring`:""}`);
 };
 $("#routineBtn").onclick=()=>{ const col=S.collections.find(c=>c.id===S.view.list); const ids=listPieces().arr.map(p=>p.id); if(!ids.length) return; S.routine={col,ids}; openPiece(S.pieces.find(p=>p.id===ids[0]),"practice"); };
 $("#renameColBtn").onclick=()=>{ const col=S.collections.find(c=>c.id===S.view.list);
@@ -780,9 +840,22 @@ function editPiece(p){
     <div class="field"><span>Collections</span><div class="checks">${S.collections.length?S.collections.map(c=>`<label><input type="checkbox" value="${c.id}" ${c.pieceIds.includes(p.id)?"checked":""}> ${esc(c.name)}</label>`).join(""):'<span class="note" style="padding:8px">No collections yet. Add one in the sidebar.</span>'}</div></div>
     <div class="row"><button class="toggle" type="button" id="edSwing" aria-pressed="${!!(p.settings&&p.settings.swing)}">Swing 8ths by default</button>
       <label class="field" style="grid-auto-flow:column;align-items:center">Written tempo ♩ =<input type="number" id="edBpm" min="20" max="320" value="${Math.round(p.settings&&p.settings.bpm||baseTempo(parseScore(p.xml)))}"></label></div>
+    <div class="field"><span>Playback MIDI</span><div id="edMidiBox"></div><input type="file" id="edMidiIn" accept=".mid,.midi,audio/midi,audio/x-midi" hidden></div>
     ${hist.length?`<div class="field"><span>Recent runs</span><div style="overflow-x:auto"><table class="hist num"><tr><th>When</th><th>Mode</th><th>Hands</th><th>Tempo</th><th>Bars</th><th>Score</th></tr>${hist.map(a=>`<tr><td>${new Date(a.date).toLocaleDateString(undefined,{day:"numeric",month:"short"})} ${new Date(a.date).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})}</td><td>${a.mode==="play"?"Play":"Practice"}</td><td>${{B:"Both",R:"Right",L:"Left"}[a.hands]}</td><td>${a.tempoPct}%</td><td>${a.full?"All":a.from+"–"+a.to}</td><td>${a.score}%</td></tr>`).join("")}</table></div></div>`:""}
     <div class="row"><button class="btn danger" id="edDel" type="button">Delete piece</button><div class="spacer"></div><button class="btn" data-close type="button">Cancel</button><button class="btn primary" id="edSave" type="button">Save</button></div>`);
   $("#edSwing").onclick=e=>e.currentTarget.setAttribute("aria-pressed",e.currentTarget.getAttribute("aria-pressed")!=="true");
+  const midiBox=()=>{ const box=$("#edMidiBox"); if(!box) return;
+    if(!p.midi){ box.innerHTML=`<div class="note">Attach a MIDI file of this piece and the app plays it for “Hear my part” and “Hear other hand”, with its own feel, dynamics and pedalling, instead of reading the notes off the score.</div><div class="row"><label class="btn small" for="edMidiIn">Attach MIDI file</label></div>`; return; }
+    let info=""; try{ const a=alignMidi(parseMidiFile(b64ToBuf(p.midi.b64)),parseScore(p.xml)); const pct=Math.round(a.match*100);
+      info=`${a.notes.length} notes · ${pct}% line up with the score${pct<60?". Playback may drift: export the MIDI from this same score.":""}`; }catch(e){ info=e.message; }
+    box.innerHTML=`<div class="note"><b style="color:var(--ink)">${esc(p.midi.name)}</b> · ${esc(info)}</div>
+      <div class="row"><button class="toggle" type="button" id="edUseMidi" aria-pressed="${p.settings.useMidi!==false}">Use for playback</button><label class="btn small" for="edMidiIn">Replace</label><button class="btn small danger" type="button" id="edMidiDel">Remove</button></div>`;
+    $("#edUseMidi").onclick=async e=>{ const on=e.currentTarget.getAttribute("aria-pressed")!=="true"; e.currentTarget.setAttribute("aria-pressed",on); p.settings.useMidi=on; await savePiece(p); renderLibrary(); };
+    $("#edMidiDel").onclick=async()=>{ delete p.midi; await savePiece(p); midiBox(); renderLibrary(); }; };
+  p.settings=p.settings||{}; midiBox();
+  $("#edMidiIn").onchange=async e=>{ const f=e.target.files[0]; e.target.value=""; if(!f) return;
+    try{ const buf=await f.arrayBuffer(); parseMidiFile(buf); p.midi={name:f.name,b64:bufToB64(buf)}; p.settings.useMidi=true; await savePiece(p); midiBox(); renderLibrary(); toast("MIDI file attached"); }
+    catch(err){ toast(err.message); } };
   $("#edSave").onclick=async()=>{
     p.title=$("#edTitle").value.trim()||p.title;
     p.tags=[...new Set($("#edTags").value.split(",").map(t=>t.trim()).filter(Boolean))];
@@ -799,7 +872,7 @@ function showView(name){ $("#viewLibrary").hidden=name!=="library"; $("#viewPlay
 async function openPiece(p,mode){
   stopRun();
   S.cur=p; let sc; try{ sc=parseScore(p.xml); }catch(e){ toast(e.message); return; }
-  S.score=sc; p.settings=p.settings||{};
+  S.score=sc; p.settings=p.settings||{}; S.midi=pieceMidi(p,sc);
   S.mode=mode||"practice"; S.hands=p.settings.hands||"B"; if(S.hands!=="B"&&!sc.hands.includes(S.hands)) S.hands="B";
   S.tempoPct=p.settings.tempoPct||100; S.swing=!!p.settings.swing; S.from=1; S.to=sc.measures.length;
   $("#pTitle").textContent=p.title;
@@ -848,12 +921,16 @@ $("#tgMine").onclick=()=>{ S.mine=!S.mine; syncControls(); };
 function range(){ const ms=S.score.measures; const a=ms[S.from-1], b=ms[S.to-1]; return {qs:a.q,qe:b.q+b.len,full:S.from===1&&S.to===ms.length}; }
 function activeNotes(qs,qe){ return S.score.notes.filter(n=>n.q>=qs-1e-6&&n.q<qe-1e-6&&(S.hands==="B"||n.hand===S.hands)); }
 function otherNotes(qs,qe){ return S.hands==="B"?[]:S.score.notes.filter(n=>n.q>=qs-1e-6&&n.q<qe-1e-6&&n.hand!==S.hands); }
+/* what the app plays: the attached MIDI performance if there is one, otherwise the score's notes */
+function playbackNotes(qs,qe,which){ // which: "mine" | "other"
+  const src= S.midi ? S.midi.notes : S.score.notes;
+  return src.filter(n=>n.q>=qs-1e-6&&n.q<qe-1e-6&&(which==="mine" ? (S.hands==="B"||n.hand===S.hands) : (S.hands!=="B"&&n.hand!==S.hands))); }
 
 /* status strip */
 function idleStrip(){
   const n=S.score?activeNotes(range().qs,range().qe).length:0;
   $("#strip").innerHTML= S.mode==="play"
-    ? `<div class="note">Play mode: count-in, then the score moves at tempo and every note is scored. Full runs, both hands, 100% tempo earn stars. Turn on “Hear my part” to play along with the app. <span class="num">${n} notes</span></div>`
+    ? `<div class="note">Play mode: count-in, then the score moves at tempo and every note is scored. Full runs, both hands, 100% tempo earn stars. Turn on “Hear my part” to play along with the app.${S.midi?" Playback uses the attached MIDI file.":""} <span class="num">${n} notes</span></div>`
     : `<div class="note">Practice mode: the cursor waits for the right notes, which light up on the keyboard above. Take it at your own pace. <span class="num">${n} notes</span></div>`;
 }
 function liveStrip(kind){
@@ -874,13 +951,13 @@ function startPractice(){
   const {qs,qe,full}=range(); const notes=activeNotes(qs,qe); if(!notes.length){ toast("No notes for this hand in these bars."); return; }
   try{ Audio.ensure(); }catch(e){}
   const steps=[]; for(const n of notes){ const last=steps[steps.length-1]; if(last&&Math.abs(last.q-n.q)<1e-4) last.notes.push(n); else steps.push({q:n.q,notes:[n]}); }
-  const others=otherNotes(qs,qe), clk=makeRunClock();
+  const others=playbackNotes(qs,qe,"other"), clk=makeRunClock();
   View.clearColors(); liveStrip("practice");
   let i=0, wrong=0, firstTry=0, stepWrong=false, pressed=new Set(); const t0=Date.now();
   const show=()=>{ const st=steps[i]; View.goQ(st.q); $("#sStep").textContent=i; $("#sWrong").textContent=wrong; $("#sProg").style.width=(100*i/steps.length)+"%"; $("#sBar").textContent=barAtQ(st.q);
     $("#sNeed").textContent="Next: "+st.notes.map(n=>noteName(n.midi)).join(" + "); Kbd.expect(st.notes.map(n=>n.midi)); };
   const playOthers=(fromQ,toQ)=>{ if(!S.other||!others.length||!Audio.ctx) return; const now=Audio.ctx.currentTime+.02, base=clk.sec(fromQ);
-    for(const o of others) if(o.q>=fromQ-1e-6&&o.q<toQ-1e-6){ const d=clk.sec(o.q+o.dq)-clk.sec(o.q), at=clk.sec(o.q)-base; Audio.tone(o.midi,now+at,d); Kbd.auto(o.midi,at+.02,d); } };
+    for(const o of others) if(o.q>=fromQ-1e-6&&o.q<toQ-1e-6){ const d=clk.sec(o.q+o.dq)-clk.sec(o.q), at=clk.sec(o.q)-base; Audio.tone(o.midi,now+at,d,o.vel??.72); Kbd.auto(o.midi,at+.02,d); } };
   const onMidi=e=>{ if(!e.on) return; const st=steps[i]; if(!st) return;
     if(st.notes.some(n=>n.midi===e.midi)){ pressed.add(e.midi); View.color(st.q,e.midi,"#14935A"); Kbd.pulse(e.midi,"ok"); }
     else { wrong++; stepWrong=true; Kbd.pulse(e.midi,"bad",400); $("#sWrong").textContent=wrong; const s=$("#strip"); s.classList.remove("flash"); void s.offsetWidth; s.classList.add("flash"); }
@@ -922,9 +999,9 @@ function runTimed(kind){
   for(let b=0;b<countBeats;b++){ const t=tStart-(countBeats-b)*beatSec; ev.push({t,fn:tt=>Audio.click(tt,b%m0.beats===0)}); ev.push({t:t-.05,fn:()=>showCount(m0.beats-(b%m0.beats),t)}); }
   ev.push({t:tStart-.05,fn:()=>setTimeout(()=>$("#countIn").hidden=true,(tStart-Audio.ctx.currentTime)*1000)});
   if(S.metro||kind==="listen"){ if(S.metro) for(let i=S.from-1;i<S.to;i++){ const m=S.score.measures[i]; const bq=4/m.bt; for(let b=0;b<m.beats;b++){ const q=m.q+b*bq; if(q>=qe-1e-6) break; if(S.settings.metroBeats==="24"&&m.beats===4&&b%2===0) continue; ev.push({t:tStart+rel(q),fn:tt=>Audio.click(tt,S.settings.metroBeats==="24"?false:b===0)}); } } }
-  const guided=kind==="play"&&S.mine; const mineSet=new Set(guided?notes:[]);
-  const accomp= (S.other?otherNotes(qs,qe):[]).concat(guided?notes:[]);
-  for(const n of accomp){ const d=clk.sec(n.q+n.dq)-clk.sec(n.q); ev.push({t:tStart+rel(n.q),fn:tt=>{ Audio.tone(n.midi,tt,d,mineSet.has(n)?.6:.72); Kbd.auto(n.midi,tt-Audio.ctx.currentTime,d); }}); }
+  const guided=kind==="play"&&S.mine; const mine=guided?playbackNotes(qs,qe,"mine"):[]; const mineSet=new Set(mine);
+  const accomp= (S.other?playbackNotes(qs,qe,"other"):[]).concat(mine);
+  for(const n of accomp){ const d=clk.sec(n.q+n.dq)-clk.sec(n.q); const v=n.vel??(mineSet.has(n)?.6:.72); ev.push({t:tStart+rel(n.q),fn:tt=>{ Audio.tone(n.midi,tt,d,v); Kbd.auto(n.midi,tt-Audio.ctx.currentTime,d); }}); }
   const sched=Scheduler(ev);
   const exp=kind==="play"?notes.map(n=>({n,t:rel(n.q),hit:false,missed:false})):[];
   const win=clamp(.28*beatSec*(m0.bt===8?2:1),.09,.2);
