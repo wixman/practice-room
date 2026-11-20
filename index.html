@@ -162,8 +162,21 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
 .scorewrap{flex:1;min-height:0;overflow:auto;padding:4px max(16px,env(safe-area-inset-right,0px)) 12px max(16px,env(safe-area-inset-left,0px))}
 .paper{background:var(--paper);border:1px solid var(--paper-line);border-radius:14px;box-shadow:var(--shadow);min-height:200px;padding:10px 0;max-width:1400px;margin:0 auto;position:relative;color:#111}
 .paper .msg{padding:40px 24px;text-align:center;color:#555}
-#osmd{width:100%}
+#osmd{width:100%;position:relative}
+#osmd .dim{position:absolute;pointer-events:none;background:var(--paper);opacity:.72;z-index:2;transition:opacity .2s}
 .countin{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;font:800 140px/1 var(--f-display);color:var(--accent);text-shadow:0 4px 30px rgba(0,0,0,.25)}
+/* options menu */
+.optwrap{position:relative}
+#optBtn{gap:6px}
+.optcount{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--cool);color:#fff;font-size:11px}
+.optcount:empty{display:none}
+.opts{position:absolute;top:calc(100% + 8px);left:0;z-index:40;display:flex;flex-direction:column;gap:6px;min-width:240px;padding:10px;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+.opts .toggle{justify-content:flex-start;width:100%}
+.optrow{display:flex;align-items:center;gap:6px;padding:4px 2px 0;border-top:1px dashed var(--line);margin-top:2px}
+.optrow .lbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.optrow .iconbtn{width:38px;height:38px}
+.deckrow h2{font-size:22px}
+.deck{gap:8px}
 /* theme button shows the mode you'd switch to */
 #themeBtn .ic-moon{display:none} body.is-light #themeBtn .ic-sun{display:none} body.is-light #themeBtn .ic-moon{display:inline}
 /* full screen / focus: just the controls and the score */
@@ -172,8 +185,13 @@ body.focus .top, body.focus .deck>.deckrow{display:none}
 body.focus .deck{padding-top:max(10px,env(safe-area-inset-top,0px))}
 body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
 /* learn mode */
-.learnbar{padding:0 max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:10px}
+.learnbar{padding:0 max(16px,env(safe-area-inset-right,0px)) 8px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:8px}
 .lhead{display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;justify-content:space-between}
+.lline{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:4px 6px 4px 14px}
+.lline .lnow{flex-direction:row;align-items:baseline;gap:10px;flex:1 1 auto;flex-wrap:wrap}
+.lline .lnow b{font-size:16px}
+.lline .lmedals.cur .lm{min-height:34px;min-width:30px;padding:2px}
+.lline .lprog{flex:0 1 200px;min-width:120px}
 .lnow{display:flex;flex-direction:column;gap:1px;min-width:0}
 .lnow .lbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--accent-text)}
 .lnow b{font:700 20px/1.15 var(--f-display);letter-spacing:-.01em}
@@ -254,7 +272,7 @@ body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
 .hist th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:11px 18px;border-radius:999px;font-weight:600;z-index:60;max-width:calc(100% - 32px);box-shadow:var(--shadow)}
 
-@media (max-width:480px){ .brand span{display:none} }
+@media (max-width:480px){ .brand span{display:none} .top{gap:8px} #midiText{max-width:22vw} .top .iconbtn{width:40px;height:40px} }
 @media (max-width:640px){ #cloudText{display:none} .pill.cloud{padding:0 10px} }
 @media (max-width:760px){
   .library{grid-template-columns:1fr;grid-template-rows:auto 1fr}
@@ -358,23 +376,26 @@ body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
           <div class="val num"><span id="tPct">100%</span><small id="tBpm">♩ = 120</small></div>
           <button type="button" id="tUp" aria-label="Faster">+</button>
         </div>
-        <div class="group"><span class="lbl">Bars</span>
+        <div class="group" id="barsGroup"><span class="lbl">Bars</span>
           <input type="number" id="barFrom" min="1" value="1" inputmode="numeric" aria-label="First bar">
           <span class="note">to</span>
           <input type="number" id="barTo" min="1" value="1" inputmode="numeric" aria-label="Last bar">
         </div>
-        <div class="vsep"></div>
-        <button class="toggle" type="button" id="tgMetro" aria-pressed="true">Metronome</button>
-        <button class="toggle" type="button" id="tgMine" aria-pressed="false" title="The app plays the notes you're playing, so you can play along">Hear my part</button>
-        <button class="toggle" type="button" id="tgOther" aria-pressed="false">Hear other hand</button>
-        <button class="toggle" type="button" id="tgSwing" aria-pressed="false">Swing 8ths</button>
-        <button class="toggle" type="button" id="tgKbd" aria-pressed="false" title="Show the 88-key strip under the score">Keyboard</button>
-        <div class="spacer"></div>
-        <div class="group">
-          <button class="iconbtn" type="button" id="zoomOut" aria-label="Smaller notation">−</button>
-          <button class="iconbtn" type="button" id="zoomIn" aria-label="Larger notation">+</button>
-          <button class="iconbtn" type="button" id="fsBtn" aria-label="Full screen" title="Full screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path class="fs-in" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><path class="fs-out" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg></button>
+        <div class="optwrap">
+          <button class="btn small" type="button" id="optBtn" aria-expanded="false" aria-controls="optsPanel">Options<span class="optcount num" id="optCount"></span><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+          <div class="opts" id="optsPanel" hidden>
+            <button class="toggle" type="button" id="tgMetro" aria-pressed="true">Metronome</button>
+            <button class="toggle" type="button" id="tgMine" aria-pressed="false" title="The app plays the notes you're playing, so you can play along">Hear my part</button>
+            <button class="toggle" type="button" id="tgOther" aria-pressed="false">Hear other hand</button>
+            <button class="toggle" type="button" id="tgSwing" aria-pressed="false">Swing 8ths</button>
+            <button class="toggle" type="button" id="tgKbd" aria-pressed="false" title="Show the 88-key strip under the score">Keyboard</button>
+            <div class="optrow"><span class="lbl">Notation size</span><span class="spacer"></span>
+              <button class="iconbtn" type="button" id="zoomOut" aria-label="Smaller notation">−</button>
+              <button class="iconbtn" type="button" id="zoomIn" aria-label="Larger notation">+</button></div>
+          </div>
         </div>
+        <div class="spacer"></div>
+        <button class="iconbtn" type="button" id="fsBtn" aria-label="Full screen" title="Full screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path class="fs-in" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><path class="fs-out" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg></button>
         <button class="btn primary big" type="button" id="startBtn">Start</button>
       </div>
     </div>
@@ -741,10 +762,11 @@ const View={ osmd:null, ok:false, pos:[], idx:-1, cache:new Map(), colored:[], z
       this.osmd=new lib.OpenSheetMusicDisplay(host,{autoResize:true,backend:"svg",drawTitle:true,drawCredits:false,drawPartNames:false,followCursor:false,defaultFontFamily:"Times New Roman",cursorsOptions:[{type:0,color:"#5262E6",alpha:.3,follow:false}]});
       this.rehearsals=score.rehearsals||[];
       try{ const r=this.osmd.EngravingRules; if(r){ if("RehearsalMarkFontSize" in r) r.RehearsalMarkFontSize=12; } }catch(e){}
-      const draw=this.osmd.render.bind(this.osmd); this.osmd.render=(...a)=>{ const out=draw(...a); try{ this.restyle(); this.keepTextInside(); }catch(e){ console.warn("restyle",e); } return out; };
+      const draw=this.osmd.render.bind(this.osmd); this.osmd.render=(...a)=>{ const out=draw(...a); try{ this.restyle(); this.keepTextInside(); }catch(e){ console.warn("restyle",e); } this.boxes=null; if(this.ok&&S.score) setTimeout(applyDim,0); return out; };
       await this.osmd.load(xml); this.osmd.Zoom=this.zoom; this.osmd.render();
       const c=this.osmd.cursor; c.show(); c.reset();
       let guard=0; while(!c.Iterator.EndReached&&guard++<200000){ this.pos.push({q:c.Iterator.currentTimeStamp.RealValue*4,m:c.Iterator.CurrentMeasureIndex}); c.next(); }
+      this.boxes=null;
       c.reset(); this.idx=0; this.ok=true; this.calibrate(score);
       $("#paperMsg").hidden=true;
     }catch(e){ console.error(e); $("#paperMsg").hidden=false; $("#paperMsg").textContent=(e&&e.message)||"Couldn't draw this score."; this.ok=false; }
@@ -798,6 +820,25 @@ const View={ osmd:null, ok:false, pos:[], idx:-1, cache:new Map(), colored:[], z
       }
     }
   },
+  /* Fade every bar outside [from,to]. Bar positions come from walking the cursor (left/top/height per bar). */
+  measureBoxes(){
+    if(this.boxes) return this.boxes;
+    const c=this.osmd.cursor, el=c.cursorElement, host=$("#osmd"); if(!el) return null;
+    const keep=this.idx; c.reset(); this.idx=0; const first=new Map();
+    for(let i=0;i<this.pos.length;i++){ const m=this.pos[i].m; if(!first.has(m)){ const r=el.getBoundingClientRect(), h=host.getBoundingClientRect(); if(r.height) first.set(m,{x:r.left-h.left,y:r.top-h.top,h:r.height}); } if(i<this.pos.length-1){ c.next(); this.idx++; } }
+    c.reset(); this.idx=0; this.goIndex(keep);
+    const W=host.getBoundingClientRect().width, ms=[...first.keys()].sort((a,b)=>a-b), boxes=new Map();
+    ms.forEach((m,k)=>{ const a=first.get(m), prev=k>0?first.get(ms[k-1]):null, next=k+1<ms.length?first.get(ms[k+1]):null;
+      const sysStart=!prev||Math.abs(prev.y-a.y)>2, sysEnd=!next||Math.abs(next.y-a.y)>2;
+      const x0=sysStart?0:a.x-6, x1=sysEnd?W:next.x-6; boxes.set(m,{x:x0,y:a.y-14,w:Math.max(0,x1-x0),h:a.h+28}); });
+    return this.boxes=boxes;
+  },
+  dimOutside(from,to){ // bars are 1-based
+    const host=$("#osmd"); host.querySelectorAll(".dim").forEach(d=>d.remove()); if(!this.ok||from==null) return;
+    const n=S.score?S.score.measures.length:0; if(from<=1&&to>=n) return;
+    let boxes; try{ boxes=this.measureBoxes(); }catch(e){ boxes=null; } if(!boxes) return;
+    for(const [m,b] of boxes){ if(m+1>=from&&m+1<=to) continue; const d=document.createElement("div"); d.className="dim"; d.style.cssText=`left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px`; host.appendChild(d); }
+  },
   rerender(){ if(!this.ok) return; const keep=this.idx; this.osmd.Zoom=this.zoom; this.osmd.render(); this.cache.clear(); this.colored=[]; this.osmd.cursor.reset(); this.idx=0; this.goIndex(Math.max(0,keep)); },
   gMidi(gn){ const n=gn.sourceNote; if(!n||(n.isRest&&n.isRest())) return null;
     if(this.offset!==null&&typeof n.halfTone==="number") return n.halfTone+this.offset;
@@ -825,7 +866,7 @@ const View={ osmd:null, ok:false, pos:[], idx:-1, cache:new Map(), colored:[], z
   clearColors(){ for(const g of this.colored) g.querySelectorAll("path,ellipse").forEach(p=>{p.style.fill="";p.style.stroke="";}); this.colored=[]; }
 };
 
-window.addEventListener("resize",()=>{ View.cache.clear(); View.colored=[]; });
+window.addEventListener("resize",()=>{ View.cache.clear(); View.colored=[]; View.boxes=null; clearTimeout(window.__dimT); window.__dimT=setTimeout(applyDim,400); });
 /* ================= app state ================= */
 const S={ pieces:[], collections:[], settings:{latency:30,thresholds:[75,88,95],countIn:1,pianoVol:80,metroVol:70,metroSound:"wood",metroBeats:"all",graces:"score",learnBars:4,learnTempos:[50,75,100],learnTarget:100,showKbd:false},
   view:{list:"all",tag:null,q:"",sort:"title"},
@@ -1023,6 +1064,7 @@ async function openPiece(p,mode){
   showView("player"); syncControls(); idleStrip();
   await View.load(p.xml,sc);
   if(S.mode==="learn"&&View.ok) View.goQ(sc.measures[S.from-1].q);
+  applyDim();
   if(sc.hasRepeats) toast("This piece has repeat signs. Expand the repeats for accurate scoring.");
 }
 function baseBpm(){ return (S.cur.settings&&S.cur.settings.bpm)||baseTempo(S.score); }
@@ -1039,26 +1081,28 @@ function syncControls(){
   $("#startBtn").innerHTML= S.running? '<svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/></svg>Stop' : '<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg>'+(S.mode==="play" ? (S.mine?"Play along":"Start (count-in)") : S.mode==="learn" ? (S.learnPlan&&S.learnPos&&S.learnPlan.units[S.learnPos.u].sections[S.learnPos.i]?"Start section":S.learnPlan&&S.learnPlan.multi?"Start whole key":"Start whole piece") : "Start practice");
   $("#startBtn").classList.toggle("stop",!!S.running); $("#startBtn").classList.toggle("primary",!S.running);
   const busy=!!S.running;
-  for(const el of $$(".deck button, .deck input")){ if(["startBtn","backBtn","fsBtn","tgKbd"].includes(el.id)) continue; el.disabled=busy; }
+  for(const el of $$(".deck button, .deck input")){ if(["startBtn","backBtn","fsBtn","tgKbd","optBtn"].includes(el.id)) continue; el.disabled=busy; }
   if(!busy){ $$("[data-hands]").forEach(b=>b.disabled= b.dataset.hands!=="B" && !S.score.hands.includes(b.dataset.hands)); $("#tgOther").disabled=S.hands==="B"; }
   if(!busy) $("#tgMine").disabled=S.mode==="practice";
   if(S.mode==="learn") for(const id of ["#barFrom","#barTo","#tDown","#tUp"]) $(id).disabled=true; // Learn sets bars and tempo
   $("#tgMine").setAttribute("aria-pressed",S.mine);
   $("#tgKbd").setAttribute("aria-pressed",!!S.settings.showKbd); $("#tgKbd").disabled=false; $("#kbdWrap").hidden=!S.settings.showKbd;
+  const on=[S.metro,S.mine&&S.mode!=="practice",S.other&&S.hands!=="B",S.swing,!!S.settings.showKbd].filter(Boolean).length; $("#optCount").textContent=on||"";
+  $("#barsGroup").hidden=S.mode==="learn";
 }
 function persistPieceSettings(){ const p=S.cur; p.settings={...p.settings,hands:S.hands,tempoPct:S.tempoPct,swing:S.swing}; savePiece(p); }
 $$("[data-mode]").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 function setMode(mode){ const was=S.mode; S.mode=mode;
   if(mode==="learn") setupLearn();
   else if(was==="learn"){ const p=S.cur; S.tempoPct=p.settings.tempoPct||100; S.from=1; S.to=S.score.measures.length; $("#barFrom").value=1; $("#barTo").value=S.to; }
-  renderLearn(); syncControls(); idleStrip(); }
+  renderLearn(); syncControls(); idleStrip(); applyDim(); }
 $$("[data-hands]").forEach(b=>b.onclick=()=>{ S.hands=b.dataset.hands; persistPieceSettings(); syncControls(); });
 $("#tDown").onclick=()=>{ S.tempoPct=clamp(S.tempoPct-5,25,200); persistPieceSettings(); syncControls(); };
 $("#tUp").onclick=()=>{ S.tempoPct=clamp(S.tempoPct+5,25,200); persistPieceSettings(); syncControls(); };
 $("#tgMetro").onclick=()=>{ S.metro=!S.metro; syncControls(); };
 $("#tgOther").onclick=()=>{ S.other=!S.other; syncControls(); };
 $("#tgSwing").onclick=()=>{ S.swing=!S.swing; persistPieceSettings(); syncControls(); };
-$("#barFrom").onchange=$("#barTo").onchange=()=>{ const n=S.score.measures.length; let a=clamp(parseInt($("#barFrom").value)||1,1,n), b=clamp(parseInt($("#barTo").value)||n,1,n); if(b<a) b=a; S.from=a; S.to=b; $("#barFrom").value=a; $("#barTo").value=b; if(View.ok) View.goQ(S.score.measures[a-1].q); };
+$("#barFrom").onchange=$("#barTo").onchange=()=>{ const n=S.score.measures.length; let a=clamp(parseInt($("#barFrom").value)||1,1,n), b=clamp(parseInt($("#barTo").value)||n,1,n); if(b<a) b=a; S.from=a; S.to=b; $("#barFrom").value=a; $("#barTo").value=b; if(View.ok) View.goQ(S.score.measures[a-1].q); applyDim(); };
 $("#zoomIn").onclick=()=>{ View.zoom=clamp(+(View.zoom+.1).toFixed(2),.5,2); View.rerender(); };
 $("#zoomOut").onclick=()=>{ View.zoom=clamp(+(View.zoom-.1).toFixed(2),.5,2); View.rerender(); };
 $("#backBtn").onclick=()=>{ stopRun(); setFocus(false); showView("library"); renderLibrary(); };
@@ -1066,6 +1110,13 @@ $("#nextBtn").onclick=()=>{ const i=S.routine.ids.indexOf(S.cur.id); const p=S.p
 $("#startBtn").onclick=()=>{ if(S.running) { stopRun(); return; } S.mode==="play"?startPlay():S.mode==="learn"?startLearnRun():startPractice(); };
 $("#learnBar").addEventListener("click",learnClick);
 $("#tgMine").onclick=()=>{ S.mine=!S.mine; syncControls(); };
+/* Fade the bars you're not working on */
+function applyDim(){ if(!View.ok||!S.score) return; View.dimOutside(S.from,S.to); }
+/* Options menu */
+function setOpts(open){ $("#optsPanel").hidden=!open; $("#optBtn").setAttribute("aria-expanded",open); }
+$("#optBtn").onclick=e=>{ e.stopPropagation(); setOpts($("#optsPanel").hidden); };
+document.addEventListener("click",e=>{ if(!$("#optsPanel").hidden&&!e.target.closest(".optwrap")) setOpts(false); });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") setOpts(false); });
 /* Light / dark: follows the device until you choose; the choice is kept per device */
 const darkMQ=matchMedia("(prefers-color-scheme: dark)");
 function effectiveTheme(){ return document.documentElement.dataset.theme||(darkMQ.matches?"dark":"light"); }
@@ -1272,7 +1323,7 @@ function selectLearn(u,i,lv,go=true){
   S.from=r.from; S.to=r.to; S.tempoPct=(S.settings.learnTempos||[50,75,100])[lv];
   $("#barFrom").value=S.from; $("#barTo").value=S.to;
   if(View.ok&&go) View.goQ(ms[S.from-1].q);
-  renderLearn(); syncControls(); idleStrip();
+  renderLearn(); syncControls(); idleStrip(); applyDim();
 }
 const MEDAL_C={Bronze:["#E0A06A","#A8622E"],Silver:["#E4E9F0","#9AA4B2"],Gold:["#FFD877","#D3961F"]};
 function medalSVG(kind,on,size=26){ const [a,b]=MEDAL_C[kind]; const id="m"+kind+size;
@@ -1298,15 +1349,20 @@ function renderLearn(){
       <select id="lUnit" aria-label="Key">${plan.units.map((u,ui)=>{ const c=countCells(S.learnCells.filter(x=>x.u===ui)); return `<option value="${ui}" ${ui===pos.u?"selected":""}>${esc(u.label)} · ${c.earned}/${c.total}${c.earned===c.total?" ✓":""}</option>`; }).join("")}</select>
       <button type="button" class="iconbtn" id="lNextU" aria-label="Next key" ${pos.u===plan.units.length-1?"disabled":""}>›</button>
       <span class="note num">${mine.earned}/${mine.total} in this key</span></div>` : "";
-  box.innerHTML=`<div class="lhead">
-      <div class="lnow"><span class="lbl">${tgt?"Now":"Learned"}</span><b>${plan.multi?esc(unit.key)+" · ":""}${unit.sections[pos.i]?`Section ${pos.i+1} of ${unit.sections.length}`:plan.multi?"Whole key":"Whole piece"} · ${L.name}</b>
-        <span class="note num">Bars ${r.from}–${r.to} · ${S.tempoPct}% · ♩ = ${bpm} · ${S.settings.learnTarget||100}% earns ${L.medal.toLowerCase()}</span></div>
-      <div class="lprog"><div class="progress"><i style="width:${100*all.earned/all.total}%"></i></div><span class="num"><b>${all.earned}</b>/${all.total} medals</span></div>
-    </div>${picker}
-    <div class="lsecs" id="lsecs">${chips}</div>`;
+  const open=learnOpen();
+  const curMedals=LEVELS.map((LL,l)=>{ const c=cellOf(cellKeyAt(pos.u,pos.i,l))||{}; return `<button type="button" class="lm ${pos.lv===l?"here":""}" data-sec="${pos.i}" data-lv="${l}" title="${LL.name}: ${c.earned?"earned":c.best?`best ${c.best}%`:"not tried"}">${medalSVG(LL.medal,!!c.earned,20)}</button>`; }).join("");
+  box.innerHTML=`<div class="lline">
+      <div class="lnow"><b>${plan.multi?esc(unit.key)+" · ":""}${unit.sections[pos.i]?`Section ${pos.i+1}/${unit.sections.length}`:plan.multi?"Whole key":"Whole piece"} · ${L.name}</b>
+        <span class="note num">bars ${r.from}–${r.to} · ♩ = ${bpm}</span></div>
+      <div class="lmedals cur">${curMedals}</div>
+      <div class="lprog"><div class="progress"><i style="width:${100*all.earned/all.total}%"></i></div><span class="num"><b>${all.earned}</b>/${all.total}</span></div>
+      <button type="button" class="btn small" id="lToggle" aria-expanded="${open}">${open?"Hide sections":"All sections"}<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" style="transform:rotate(${open?180:0}deg)"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+    </div>${open?`${picker}<div class="lsecs" id="lsecs">${chips}</div>`:""}`;
+  $("#lToggle").onclick=()=>{ try{ localStorage.setItem("pr-learn-open",open?"0":"1"); }catch(e){} renderLearn(); };
   const cur=box.querySelector(".lsec.cur"); if(cur) cur.scrollIntoView({block:"nearest",inline:"center"});
   const sel=$("#lUnit"); if(sel){ sel.onchange=()=>gotoUnit(+sel.value); $("#lPrev").onclick=()=>gotoUnit(pos.u-1); $("#lNextU").onclick=()=>gotoUnit(pos.u+1); sel.disabled=!!S.running; }
 }
+function learnOpen(){ try{ return localStorage.getItem("pr-learn-open")==="1"; }catch(e){ return false; } }
 function gotoUnit(u){ if(S.running) return; u=clamp(u,0,S.learnPlan.units.length-1); const c=S.learnCells.find(x=>x.u===u&&!earnedAt(x.key))||{u,i:0,lv:0}; selectLearn(c.u,c.i,c.lv); }
 function learnClick(e){ if(S.running) return; const pos=S.learnPos; const m=e.target.closest("[data-lv]"); if(m){ selectLearn(pos.u,+m.dataset.sec,+m.dataset.lv); return; }
   const t=e.target.closest(".ltitle"); if(t){ const i=+t.dataset.sec; const lv=LEVELS.findIndex((_,l)=>!earnedAt(cellKeyAt(pos.u,i,l))); selectLearn(pos.u,i,lv<0?0:lv); } }
