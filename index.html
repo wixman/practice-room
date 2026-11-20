@@ -188,6 +188,10 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
 @keyframes pop{0%{transform:scale(.2) rotate(-25deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
 .confetti{position:fixed;inset:0;pointer-events:none;z-index:70}
 .lmeta{display:inline-flex;align-items:center;gap:4px}
+.keytag{font-weight:600;color:var(--ink)}
+.lunit{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lunit select{flex:1 1 260px;min-width:0;border-radius:999px;font-weight:600}
+.lunit .iconbtn{width:40px;height:40px}
 /* 88-key strip */
 .kbdwrap{padding:0 max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px))}
 .kbd{position:relative;height:64px;max-width:1400px;margin:0 auto;background:var(--kbd-bg);border-radius:12px 12px 0 0;padding:6px 6px 0;overflow:hidden}
@@ -464,19 +468,21 @@ function parseScore(xml){
   const notes=[], measures=[], tempos=[]; let hasRepeats=false;
   const singleStaffParts=parts.length>=2;
   parts.forEach((part,pi)=>{
-    let div=1, staves=1, beats=4, bt=4, mi=0; const tieOpen=new Map(); const graces=new Map(); // staff|voice -> [[grace chord], ...]
+    let div=1, staves=1, beats=4, bt=4, mi=0, curKey=null; const tieOpen=new Map(); const graces=new Map(); // staff|voice -> [[grace chord], ...]
     for(const m of kids(part,"measure")){
       const q0= pi===0 ? (measures.length? measures[measures.length-1].q+measures[measures.length-1].len : 0) : (measures[mi]?measures[mi].q:0);
-      let pos=0,maxPos=0,lastStart=0; const flags={sys:false,reh:false,dbl:false};
+      let pos=0,maxPos=0,lastStart=0; const flags={sys:false,reh:false,dbl:false}; let reh=null, heading=null, words=null;
       for(const el of m.children){
         if(pi===0){ if(el.nodeName==="print"&&(el.getAttribute("new-system")==="yes"||el.getAttribute("new-page")==="yes")) flags.sys=true;
-          if(el.nodeName==="direction"&&el.getElementsByTagName("rehearsal").length) flags.reh=true;
+          if(el.nodeName==="direction"&&el.getElementsByTagName("rehearsal").length){ flags.reh=true; if(!reh) reh=el.getElementsByTagName("rehearsal")[0].textContent.trim(); }
+          if(el.nodeName==="direction"){ for(const w of el.getElementsByTagName("words")){ const t=(w.textContent||"").trim(); if(!t||/^(swing|straight|rubato|rit|accel|a tempo|l\.h\.|r\.h\.)/i.test(t)) continue; if(!heading&&/^\d/.test(t)) heading=t; if(!words&&t.length>2) words=t; } }
           if(el.nodeName==="barline"&&(el.getAttribute("location")||"right")==="right"){ const st=kidText(el,"bar-style"), rp=kid(el,"repeat"); if(/light-light|light-heavy|heavy-light|heavy-heavy/.test(st||"")||(rp&&rp.getAttribute("direction")==="backward")) flags.dbl=true; } }
         const n=el.nodeName;
         if(n==="attributes"){
           const d=kidText(el,"divisions"); if(d) div=parseFloat(d)||1;
           const st=kidText(el,"staves"); if(st) staves=parseInt(st)||1;
           const t=kid(el,"time"); if(t){ beats=parseInt(kidText(t,"beats"))||beats; bt=parseInt(kidText(t,"beat-type"))||bt; }
+          const k=kid(el,"key"); if(k&&kidText(k,"fifths")!==null&&(!k.getAttribute("number")||k.getAttribute("number")==="1")) curKey={fifths:parseInt(kidText(k,"fifths")),mode:(kidText(k,"mode")||"major").toLowerCase()};
         } else if(n==="backup"){ pos-=parseFloat(kidText(el,"duration")||"0"); }
         else if(n==="forward"){ pos+=parseFloat(kidText(el,"duration")||"0"); maxPos=Math.max(maxPos,pos); }
         else if(n==="direction"||n==="sound"){
@@ -513,7 +519,7 @@ function parseScore(xml){
           notes.push(note); if(ties.includes("start")) tieOpen.set(key,note);
         }
       }
-      if(pi===0){ let len=maxPos/div; if(len<=0) len=beats*4/bt; measures.push({number:m.getAttribute("number")||String(mi+1),q:q0,len,beats,bt,...flags}); }
+      if(pi===0){ let len=maxPos/div; if(len<=0) len=beats*4/bt; measures.push({number:m.getAttribute("number")||String(mi+1),q:q0,len,beats,bt,...flags,key:curKey,label:reh||heading||words||null}); }
       mi++;
     }
   });
@@ -836,12 +842,14 @@ function listPieces(){
   return {arr,col};
 }
 /* Learn section counts for the library cards: worked out in the background, one piece at a time, and cached */
-const secCache=new Map(); let secTimer=null;
+const secCache=new Map(); let secTimer=null; // value: {sections,total,keys:Set,keyText}
 const secKey=p=>p.id+"|"+(p.xmlRev||p.added||"")+"|"+(S.settings.learnBars||4);
 function sectionCount(p){ return secCache.has(secKey(p))?secCache.get(secKey(p)):null; }
 function fillSectionCounts(){ if(secTimer) return;
   const step=()=>{ const p=S.pieces.find(x=>x.xml&&sectionCount(x)===null); if(!p){ secTimer=null; if(!$("#viewLibrary").hidden) renderLibrary(); return; }
-    try{ secCache.set(secKey(p),makeSections(parseScore(p.xml),S.settings.learnBars||4).length); }catch(e){ secCache.set(secKey(p),0); }
+    try{ const sc=parseScore(p.xml), plan=makeLearnPlan(sc,S.settings.learnBars||4), cells=planCells(plan);
+      secCache.set(secKey(p),{sections:plan.units.reduce((n,u)=>n+u.sections.length,0),total:cells.length,keys:new Set(cells.map(c=>c.key)),keyText:keyLabel(sc),units:plan.multi?plan.units.length:0}); }
+    catch(e){ secCache.set(secKey(p),{sections:0,total:0,keys:new Set(),keyText:""}); }
     secTimer=setTimeout(step,0); };
   secTimer=setTimeout(step,30); }
 function renderLibrary(){
@@ -873,9 +881,9 @@ function renderLibrary(){
           ${p.sample?'<div class="sample">Sample piece</div>':""}
           <div class="t">${esc(p.title)}</div>
           <div class="meta"><span>${best}</span><span>${ago(p.lastPlayed)}</span></div>
-          <div class="meta">${(()=>{ const n=sectionCount(p); if(n===null){ fillSectionCounts(); return ""; } if(!n) return "";
-              const total=(n+1)*3, earned=p.learn?Object.entries(p.learn.cells||{}).filter(([k,c])=>c.earned).length:0, e=Math.min(earned,total);
-              return `<span class="lmeta"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="1" y="3" width="3.2" height="10" rx="1" fill="currentColor"/><rect x="6.4" y="3" width="3.2" height="10" rx="1" fill="currentColor" opacity=".7"/><rect x="11.8" y="3" width="3.2" height="10" rx="1" fill="currentColor" opacity=".45"/></svg><span class="num">${n}</span> section${n===1?"":"s"}</span>`
+          <div class="meta">${(()=>{ const info=sectionCount(p); if(info===null){ fillSectionCounts(); return ""; } if(!info.sections) return "";
+              const n=info.sections, total=info.total, e=p.learn?Object.entries(p.learn.cells||{}).filter(([k,c])=>c.earned&&info.keys.has(k)).length:0;
+              return (info.keyText?`<span class="lmeta keytag" title="Key">${esc(info.keyText)}</span>`:"")+`<span class="lmeta"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="1" y="3" width="3.2" height="10" rx="1" fill="currentColor"/><rect x="6.4" y="3" width="3.2" height="10" rx="1" fill="currentColor" opacity=".7"/><rect x="11.8" y="3" width="3.2" height="10" rx="1" fill="currentColor" opacity=".45"/></svg><span class="num">${n}</span> section${n===1?"":"s"}</span>`
                 +`<span class="lmeta">${medalSVG(e===total?"Gold":e?"Silver":"Bronze",e>0,13)}<span class="num">${e}/${total}</span> medals</span>`; })()}</div>
           <div class="meta">${p.midi?`<span class="mtag" title="${esc(p.midi.name)}">${p.settings&&p.settings.useMidi===false?"MIDI off":"MIDI"}</span>`:""}${(p.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}${!col?cols.map(c=>`<span class="cdot" style="--hue:${hueOf(c.id)}">${esc(c.name)}</span>`).join(""):""}</div>
         </div>
@@ -1000,7 +1008,7 @@ function syncControls(){
   $$("[data-hands]").forEach(b=>{ b.setAttribute("aria-pressed",b.dataset.hands===S.hands); b.disabled= b.dataset.hands!=="B" && !S.score.hands.includes(b.dataset.hands); });
   $("#tPct").textContent=S.tempoPct+"%"; $("#tBpm").textContent="♩ = "+Math.round(baseBpm()*S.tempoPct/100);
   $("#tgMetro").setAttribute("aria-pressed",S.metro); $("#tgOther").setAttribute("aria-pressed",S.other); $("#tgSwing").setAttribute("aria-pressed",S.swing);
-  $("#startBtn").innerHTML= S.running? '<svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/></svg>Stop' : '<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg>'+(S.mode==="play" ? (S.mine?"Play along":"Start (count-in)") : S.mode==="learn" ? (S.learnPos&&S.learnPos.i<S.learnSecs.length?"Start section":"Start whole piece") : "Start practice");
+  $("#startBtn").innerHTML= S.running? '<svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/></svg>Stop' : '<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg>'+(S.mode==="play" ? (S.mine?"Play along":"Start (count-in)") : S.mode==="learn" ? (S.learnPlan&&S.learnPos&&S.learnPlan.units[S.learnPos.u].sections[S.learnPos.i]?"Start section":S.learnPlan&&S.learnPlan.multi?"Start whole key":"Start whole piece") : "Start practice");
   $("#startBtn").classList.toggle("stop",!!S.running); $("#startBtn").classList.toggle("primary",!S.running);
   const busy=!!S.running;
   for(const el of $$(".deck button, .deck input")){ if(["startBtn","backBtn"].includes(el.id)) continue; el.disabled=busy; }
@@ -1171,33 +1179,56 @@ function runTimed(kind,opts={}){
 function showCount(n,t){ const el=$("#countIn"); const d=Math.max(0,(t-Audio.ctx.currentTime)*1000); setTimeout(()=>{ if(!S.running) return; el.hidden=false; el.textContent=n; },d); }
 async function recordAttempt(a){ const p=S.cur; p.attempts=(p.attempts||[]).concat(a).slice(-300); p.lastPlayed=a.date; p.plays=(p.plays||0)+1; await savePiece(p); }
 
-/* ================= Learn mode: sections × three tempos, medals ================= */
+/* ================= Learn mode: sections × three tempos, medals =================
+   A piece becomes one or more units. Most pieces are a single unit (sections + the whole piece).
+   Files that move through 3+ keys (the 12-key exercises) get one unit per key run: its sections + the whole key. */
 const LEVELS=[{k:"S",name:"Slow",medal:"Bronze"},{k:"M",name:"Medium",medal:"Silver"},{k:"F",name:"Full speed",medal:"Gold"}];
-function makeSections(score,L){
-  const ms=score.measures, n=ms.length; if(!n) return [];
-  const starts=new Set([0]);
-  ms.forEach((m,i)=>{ if(i>0&&(m.sys||m.reh)) starts.add(i); if(m.dbl&&i+1<n) starts.add(i+1); });
-  if(n>1&&ms[0].len<ms[0].beats*4/ms[0].bt-1e-6) starts.delete(1); // a pickup bar joins the first section
+const KEY_MAJ={"-7":"C♭","-6":"G♭","-5":"D♭","-4":"A♭","-3":"E♭","-2":"B♭","-1":"F","0":"C","1":"G","2":"D","3":"A","4":"E","5":"B","6":"F♯","7":"C♯"};
+const KEY_MIN={"-7":"A♭","-6":"E♭","-5":"B♭","-4":"F","-3":"C","-2":"G","-1":"D","0":"A","1":"E","2":"B","3":"F♯","4":"C♯","5":"G♯","6":"D♯","7":"A♯"};
+function keyName(k){ if(!k) return ""; const minor=k.mode==="minor"; const t=(minor?KEY_MIN:KEY_MAJ)[String(k.fifths)]; return t?`${t} ${minor?"minor":"major"}`:""; }
+function keyLabel(score){ const ks=[...new Set(score.measures.map(m=>keyName(m.key)).filter(Boolean))]; return ks.length>=3?`${ks.length} keys`:ks.join(" → "); }
+function makeSections(score,L,from=1,to=score.measures.length){
+  const ms=score.measures; if(!ms.length) return [];
+  const a0=from-1, b0=to-1; const starts=new Set([a0]);
+  for(let i=a0;i<=b0;i++){ const m=ms[i]; if(i>a0&&(m.sys||m.reh)) starts.add(i); if(m.dbl&&i<b0) starts.add(i+1); }
+  if(a0===0&&b0>0&&ms[0].len<ms[0].beats*4/ms[0].bt-1e-6) starts.delete(1); // a pickup bar joins the first section
   const st=[...starts].sort((a,b)=>a-b); const out=[];
-  st.forEach((s,k)=>{ const e=(k+1<st.length?st[k+1]:n)-1, len=e-s+1, parts=Math.ceil(len/L), base=Math.floor(len/parts), extra=len%parts; let a=s;
+  st.forEach((s,k)=>{ const e=(k+1<st.length?st[k+1]:b0+1)-1, len=e-s+1, parts=Math.ceil(len/L), base=Math.floor(len/parts), extra=len%parts; let a=s;
     for(let p=0;p<parts;p++){ const sz=base+(p<extra?1:0); out.push({from:a+1,to:a+sz}); a+=sz; } });
   const end=sec=>ms[sec.to-1].q+ms[sec.to-1].len;
   return out.filter(sec=>score.notes.some(x=>x.q>=ms[sec.from-1].q-1e-6&&x.q<end(sec)-1e-6));
 }
-function learnKey(sec,lv){ return (sec?`${sec.from}-${sec.to}`:"all")+"|"+LEVELS[lv].k; }
-function learnCells(){ const out=[]; S.learnSecs.forEach((sec,i)=>LEVELS.forEach((_,lv)=>out.push({i,lv,key:learnKey(sec,lv)}))); LEVELS.forEach((_,lv)=>out.push({i:S.learnSecs.length,lv,key:learnKey(null,lv)})); return out; }
-function cellOf(key){ const p=S.cur; p.learn=p.learn||{cells:{}}; return p.learn.cells[key]; }
-function nextLearnTarget(){ return learnCells().find(c=>!(cellOf(c.key)||{}).earned)||null; }
-function learnCounts(){ const cells=learnCells(); return {earned:cells.filter(c=>(cellOf(c.key)||{}).earned).length,total:cells.length}; }
-function setupLearn(){
-  S.learnSecs=makeSections(S.score,S.settings.learnBars||4);
-  const p=S.cur; p.learn=p.learn||{cells:{}};
-  const {earned,total}=learnCounts(); if(p.learn.total!==total||p.learn.earned!==earned){ p.learn.total=total; p.learn.earned=earned; savePiece(p); }
-  const t=nextLearnTarget()||{i:0,lv:0}; selectLearn(t.i,t.lv,false);
+function makeLearnPlan(score,L){
+  const ms=score.measures, runs=[];
+  ms.forEach((m,i)=>{ const k=keyName(m.key)||"?"; const r=runs[runs.length-1]; if(r&&r.k===k) r.to=i+1; else runs.push({k,from:i+1,to:i+1}); });
+  if(runs.length<3){ const sections=makeSections(score,L); return {multi:false,units:[{label:null,key:keyLabel(score),from:1,to:ms.length,sections,whole:sections.length>1?"all":null}]}; }
+  const units=runs.map(r=>{ const sections=makeSections(score,L,r.from,r.to);
+    return {label:ms[r.from-1].label||`Key of ${r.k}`,key:r.k,from:r.from,to:r.to,sections,whole:sections.length>1?`u${r.from}-${r.to}`:null}; }).filter(u=>u.sections.length);
+  return {multi:true,units};
 }
-function selectLearn(i,lv,go=true){
-  S.learnPos={i,lv}; const ms=S.score.measures, sec=S.learnSecs[i];
-  S.from=sec?sec.from:1; S.to=sec?sec.to:ms.length; S.tempoPct=(S.settings.learnTempos||[50,75,100])[lv];
+function planCells(plan){ const out=[];
+  plan.units.forEach((u,ui)=>{ u.sections.forEach((s,i)=>LEVELS.forEach((L,lv)=>out.push({u:ui,i,lv,key:`${s.from}-${s.to}|${L.k}`})));
+    if(u.whole) LEVELS.forEach((L,lv)=>out.push({u:ui,i:u.sections.length,lv,key:`${u.whole}|${L.k}`})); });
+  return out; }
+function cellKeyAt(u,i,lv){ const unit=S.learnPlan.units[u], s=unit.sections[i]; return (s?`${s.from}-${s.to}`:unit.whole)+"|"+LEVELS[lv].k; }
+function cellOf(key){ const p=S.cur; p.learn=p.learn||{cells:{}}; return p.learn.cells[key]; }
+const earnedAt=key=>!!(cellOf(key)||{}).earned;
+function nextLearnTarget(){ return S.learnCells.find(c=>!earnedAt(c.key))||null; }
+function countCells(cells){ return {earned:cells.filter(c=>earnedAt(c.key)).length,total:cells.length}; }
+function unitDoneAt(u){ return S.learnCells.filter(c=>c.u===u).every(c=>earnedAt(c.key)); }
+function rangeOf(pos){ const unit=S.learnPlan.units[pos.u], s=unit.sections[pos.i]; return s||{from:unit.from,to:unit.to}; }
+function posLabel(pos,withUnit=true){ const unit=S.learnPlan.units[pos.u], s=unit.sections[pos.i];
+  const what= s ? `Section ${pos.i+1}` : S.learnPlan.multi ? "Whole key" : "Whole piece";
+  return (withUnit&&S.learnPlan.multi?unit.key+" · ":"")+what; }
+function setupLearn(){
+  S.learnPlan=makeLearnPlan(S.score,S.settings.learnBars||4); S.learnCells=planCells(S.learnPlan);
+  const p=S.cur; p.learn=p.learn||{cells:{}};
+  const {earned,total}=countCells(S.learnCells); if(p.learn.total!==total||p.learn.earned!==earned){ p.learn.total=total; p.learn.earned=earned; savePiece(p); }
+  const t=nextLearnTarget()||{u:0,i:0,lv:0}; selectLearn(t.u,t.i,t.lv,false);
+}
+function selectLearn(u,i,lv,go=true){
+  S.learnPos={u,i,lv}; const ms=S.score.measures, r=rangeOf(S.learnPos);
+  S.from=r.from; S.to=r.to; S.tempoPct=(S.settings.learnTempos||[50,75,100])[lv];
   $("#barFrom").value=S.from; $("#barTo").value=S.to;
   if(View.ok&&go) View.goQ(ms[S.from-1].q);
   renderLearn(); syncControls(); idleStrip();
@@ -1210,55 +1241,64 @@ function medalSVG(kind,on,size=26){ const [a,b]=MEDAL_C[kind]; const id="m"+kind
     <circle cx="16" cy="22" r="12" fill="${on?`url(#${id})`:"none"}" stroke="${on?b:"currentColor"}" stroke-width="${on?1.5:1.6}" opacity="${on?1:.55}"/>
     ${on?`<circle cx="16" cy="22" r="8" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1.2"/><path d="M16 16.6l1.6 3.3 3.6.5-2.6 2.5.6 3.6-3.2-1.7-3.2 1.7.6-3.6-2.6-2.5 3.6-.5z" fill="#fff" fill-opacity=".9"/>`:""}</svg>`; }
 function renderLearn(){
-  const box=$("#learnBar"); if(!box) return; box.hidden=S.mode!=="learn"; if(S.mode!=="learn") return;
-  const pos=S.learnPos, secs=S.learnSecs, {earned,total}=learnCounts(), tgt=nextLearnTarget();
-  const lv=LEVELS[pos.lv], sec=secs[pos.i];
-  const bpm=Math.round(baseBpm()*S.tempoPct/100);
-  const chip=(i,label)=>{ const s=secs[i]; const keys=LEVELS.map((_,l)=>learnKey(s||null,l)); const done=keys.every(k=>(cellOf(k)||{}).earned);
+  const box=$("#learnBar"); if(!box) return; box.hidden=S.mode!=="learn"; if(S.mode!=="learn"||!S.learnPlan) return;
+  const plan=S.learnPlan, pos=S.learnPos, unit=plan.units[pos.u], L=LEVELS[pos.lv];
+  const all=countCells(S.learnCells), mine=countCells(S.learnCells.filter(c=>c.u===pos.u)), tgt=nextLearnTarget();
+  const r=rangeOf(pos), bpm=Math.round(baseBpm()*S.tempoPct/100);
+  const chip=i=>{ const s=unit.sections[i]; const keys=LEVELS.map((_,l)=>cellKeyAt(pos.u,i,l)); const done=keys.every(earnedAt);
+    const label= s?`${s.from}–${s.to}`: plan.multi?"Whole key":"Whole piece";
     return `<div class="lsec ${pos.i===i?"cur":""} ${done?"done":""}">
       <button type="button" class="ltitle" data-sec="${i}">${label}${done?' <span class="tick" aria-label="complete">✓</span>':""}</button>
-      <div class="lmedals">${LEVELS.map((L,l)=>{ const c=cellOf(keys[l])||{}; const here=pos.i===i&&pos.lv===l;
-        return `<button type="button" class="lm ${here?"here":""}" data-sec="${i}" data-lv="${l}" title="${L.name}: ${c.earned?"earned":c.tries?`best ${c.best}%`:"not tried"}">${medalSVG(L.medal,!!c.earned,22)}${!c.earned&&c.tries?`<small class="num">${c.best}</small>`:""}</button>`; }).join("")}</div></div>`; };
+      <div class="lmedals">${LEVELS.map((LL,l)=>{ const c=cellOf(keys[l])||{}; const here=pos.i===i&&pos.lv===l;
+        return `<button type="button" class="lm ${here?"here":""}" data-sec="${i}" data-lv="${l}" title="${LL.name}: ${c.earned?"earned":c.tries?`best ${c.best}%`:"not tried"}">${medalSVG(LL.medal,!!c.earned,22)}${!c.earned&&c.best?`<small class="num">${c.best}</small>`:""}</button>`; }).join("")}</div></div>`; };
+  const chips=unit.sections.map((_,i)=>chip(i)).join("")+(unit.whole?chip(unit.sections.length):"");
+  const picker= plan.multi ? `<div class="lunit">
+      <button type="button" class="iconbtn" id="lPrev" aria-label="Previous key" ${pos.u===0?"disabled":""}>‹</button>
+      <select id="lUnit" aria-label="Key">${plan.units.map((u,ui)=>{ const c=countCells(S.learnCells.filter(x=>x.u===ui)); return `<option value="${ui}" ${ui===pos.u?"selected":""}>${esc(u.label)} · ${c.earned}/${c.total}${c.earned===c.total?" ✓":""}</option>`; }).join("")}</select>
+      <button type="button" class="iconbtn" id="lNextU" aria-label="Next key" ${pos.u===plan.units.length-1?"disabled":""}>›</button>
+      <span class="note num">${mine.earned}/${mine.total} in this key</span></div>` : "";
   box.innerHTML=`<div class="lhead">
-      <div class="lnow"><span class="lbl">${tgt?"Now":"Learned"}</span><b>${sec?`Section ${pos.i+1} of ${secs.length}`:"Whole piece"} · ${lv.name}</b>
-        <span class="note num">${sec?`Bars ${sec.from}–${sec.to}`:`All ${S.score.measures.length} bars`} · ${S.tempoPct}% · ♩ = ${bpm} · ${S.settings.learnTarget||100}% earns ${lv.medal.toLowerCase()}</span></div>
-      <div class="lprog"><div class="progress"><i style="width:${100*earned/total}%"></i></div><span class="num"><b>${earned}</b>/${total} medals</span></div>
-    </div>
-    <div class="lsecs" id="lsecs">${secs.map((s,i)=>chip(i,`${s.from}–${s.to}`)).join("")}${chip(secs.length,"Whole piece")}</div>`;
+      <div class="lnow"><span class="lbl">${tgt?"Now":"Learned"}</span><b>${plan.multi?esc(unit.key)+" · ":""}${unit.sections[pos.i]?`Section ${pos.i+1} of ${unit.sections.length}`:plan.multi?"Whole key":"Whole piece"} · ${L.name}</b>
+        <span class="note num">Bars ${r.from}–${r.to} · ${S.tempoPct}% · ♩ = ${bpm} · ${S.settings.learnTarget||100}% earns ${L.medal.toLowerCase()}</span></div>
+      <div class="lprog"><div class="progress"><i style="width:${100*all.earned/all.total}%"></i></div><span class="num"><b>${all.earned}</b>/${all.total} medals</span></div>
+    </div>${picker}
+    <div class="lsecs" id="lsecs">${chips}</div>`;
   const cur=box.querySelector(".lsec.cur"); if(cur) cur.scrollIntoView({block:"nearest",inline:"center"});
+  const sel=$("#lUnit"); if(sel){ sel.onchange=()=>gotoUnit(+sel.value); $("#lPrev").onclick=()=>gotoUnit(pos.u-1); $("#lNextU").onclick=()=>gotoUnit(pos.u+1); sel.disabled=!!S.running; }
 }
-function learnClick(e){ if(S.running) return; const m=e.target.closest("[data-lv]"); if(m){ selectLearn(+m.dataset.sec,+m.dataset.lv); return; }
-  const t=e.target.closest(".ltitle"); if(t){ const i=+t.dataset.sec; const s=S.learnSecs[i]||null; const lv=LEVELS.findIndex((_,l)=>!(cellOf(learnKey(s,l))||{}).earned); selectLearn(i,lv<0?0:lv); } }
+function gotoUnit(u){ if(S.running) return; u=clamp(u,0,S.learnPlan.units.length-1); const c=S.learnCells.find(x=>x.u===u&&!earnedAt(x.key))||{u,i:0,lv:0}; selectLearn(c.u,c.i,c.lv); }
+function learnClick(e){ if(S.running) return; const pos=S.learnPos; const m=e.target.closest("[data-lv]"); if(m){ selectLearn(pos.u,+m.dataset.sec,+m.dataset.lv); return; }
+  const t=e.target.closest(".ltitle"); if(t){ const i=+t.dataset.sec; const lv=LEVELS.findIndex((_,l)=>!earnedAt(cellKeyAt(pos.u,i,l))); selectLearn(pos.u,i,lv<0?0:lv); } }
 function learnResult({score,hits,misses,extras,guided}){
-  const p=S.cur, pos=S.learnPos, sec=S.learnSecs[pos.i]||null, key=learnKey(sec,pos.lv), L=LEVELS[pos.lv];
+  const p=S.cur, pos=S.learnPos, key=cellKeyAt(pos.u,pos.i,pos.lv), L=LEVELS[pos.lv], r=rangeOf(pos), unit=S.learnPlan.units[pos.u];
   const target=S.settings.learnTarget||100; const counts=!guided&&(S.hands==="B"||S.score.hands.length===1);
   p.learn=p.learn||{cells:{}}; const c=p.learn.cells[key]||{best:0,tries:0,earned:null};
   c.tries++; if(counts) c.best=Math.max(c.best,score); const earnedNow=counts&&score>=target&&!c.earned; if(earnedNow) c.earned=Date.now();
-  p.learn.cells[key]=c; const {earned,total}=learnCounts(); p.learn.earned=earned; p.learn.total=total;
-  recordAttempt({date:Date.now(),mode:"learn",score,hands:S.hands,tempoPct:S.tempoPct,full:!sec,from:S.from,to:S.to,hits,misses,extras,guided,cell:key});
-  const secDone=LEVELS.every((_,l)=>(cellOf(learnKey(sec,l))||{}).earned), pieceDone=earned===total;
-  const nxt=nextLearnTarget(); const nxtLabel=nxt?`${nxt.i<S.learnSecs.length?`Section ${nxt.i+1}`:"Whole piece"} · ${LEVELS[nxt.lv].name}`:"";
-  const where=`${sec?`Section ${pos.i+1} (bars ${sec.from}–${sec.to})`:"Whole piece"} · ${L.name} ${S.tempoPct}%`;
+  p.learn.cells[key]=c; const {earned,total}=countCells(S.learnCells); p.learn.earned=earned; p.learn.total=total;
+  recordAttempt({date:Date.now(),mode:"learn",score,hands:S.hands,tempoPct:S.tempoPct,full:r.from===1&&r.to===S.score.measures.length,from:S.from,to:S.to,hits,misses,extras,guided,cell:key});
+  const secDone=LEVELS.every((_,l)=>earnedAt(cellKeyAt(pos.u,pos.i,l))), unitDone=S.learnPlan.multi&&unitDoneAt(pos.u), pieceDone=earned===total;
+  const nxt=nextLearnTarget(); const nxtLabel=nxt?`${posLabel(nxt,nxt.u!==pos.u)} · ${LEVELS[nxt.lv].name}`:"";
+  const where=`${posLabel(pos)} (bars ${r.from}–${r.to}) · ${L.name} ${S.tempoPct}%`;
   let head, body;
   if(earnedNow){
-    head= pieceDone?"Piece learned!": secDone&&sec?`Section ${pos.i+1} mastered!`:`${L.medal} medal!`;
-    body=`<div class="bigmedal pop">${pieceDone?trophySVG():medalSVG(L.medal,true,96)}</div><p class="note">${where}</p>`;
-    celebrate(pieceDone?3:secDone?2:1);
+    head= pieceDone?"Piece learned!": unitDone?`${unit.key} done!`: secDone&&unit.sections[pos.i]?`Section ${pos.i+1} mastered!`:`${L.medal} medal!`;
+    body=`<div class="bigmedal pop">${pieceDone||unitDone?trophySVG():medalSVG(L.medal,true,96)}</div><p class="note">${esc(where)}${unitDone&&!pieceDone?` · ${S.learnPlan.units.filter((_,u)=>unitDoneAt(u)).length} of ${S.learnPlan.units.length} keys done`:""}</p>`;
+    celebrate(pieceDone?3:unitDone||secDone?2:1);
   } else if(c.earned){
-    head="Medal already earned"; body=`<div class="bigmedal">${medalSVG(L.medal,true,72)}</div><div class="score num">${score}%</div><p class="note">${where}</p>`;
+    head="Medal already earned"; body=`<div class="bigmedal">${medalSVG(L.medal,true,72)}</div><div class="score num">${score}%</div><p class="note">${esc(where)}</p>`;
   } else {
     head= !counts ? (score>=target?"Nice run":"Keep going") : score>=90?"So close":"Keep going";
-    body=`<div class="score num">${score}%</div><p class="note">${where}. ${counts?`${target}% earns the ${L.medal.toLowerCase()} medal`:guided?"Runs with “Hear my part” don't earn medals":"Medals count with both hands"}${c.best>score?`. Best so far ${c.best}%`:""}.</p>`;
+    body=`<div class="score num">${score}%</div><p class="note">${esc(where)}. ${counts?`${target}% earns the ${L.medal.toLowerCase()} medal`:guided?"Runs with “Hear my part” don't earn medals":"Medals count with both hands"}${c.best>score?`. Best so far ${c.best}%`:""}.</p>`;
   }
   sheet(`<div class="result"><h2>${head}</h2>${body}
     <div class="grid num"><div><b>${hits}</b><span>Correct</span></div><div><b>${misses}</b><span>Missed</span></div><div><b>${extras}</b><span>Wrong</span></div><div><b>${c.tries}</b><span>Tries</span></div></div>
-    <div class="row" style="justify-content:center">${(earnedNow||c.earned)&&nxt?`<button class="btn" id="lAgain">Again</button><button class="btn primary" id="lNext">Next: ${nxtLabel} ›</button>`
-      :`${nxt&&!(nxt.i===pos.i&&nxt.lv===pos.lv)?`<button class="btn" id="lSkip">Skip to ${nxtLabel}</button>`:""}<button class="btn primary" id="lAgain">Try again</button>`}<button class="btn" data-close>Close</button></div></div>`);
+    <div class="row" style="justify-content:center">${(earnedNow||c.earned)&&nxt?`<button class="btn" id="lAgain">Again</button><button class="btn primary" id="lNext">Next: ${esc(nxtLabel)} ›</button>`
+      :`${nxt&&!(nxt.u===pos.u&&nxt.i===pos.i&&nxt.lv===pos.lv)?`<button class="btn" id="lSkip">Skip to ${esc(nxtLabel)}</button>`:""}<button class="btn primary" id="lAgain">Try again</button>`}<button class="btn" data-close>Close</button></div></div>`);
   renderLearn();
-  const go=(i,lv)=>{ closeSheet(); selectLearn(i,lv); startLearnRun(); };
-  const ag=$("#lAgain"); if(ag) ag.onclick=()=>go(pos.i,pos.lv);
-  const nb=$("#lNext"); if(nb) nb.onclick=()=>go(nxt.i,nxt.lv);
-  const sk=$("#lSkip"); if(sk) sk.onclick=()=>go(nxt.i,nxt.lv);
+  const go=(u,i,lv)=>{ closeSheet(); selectLearn(u,i,lv); startLearnRun(); };
+  const ag=$("#lAgain"); if(ag) ag.onclick=()=>go(pos.u,pos.i,pos.lv);
+  const nb=$("#lNext"); if(nb) nb.onclick=()=>go(nxt.u,nxt.i,nxt.lv);
+  const sk=$("#lSkip"); if(sk) sk.onclick=()=>go(nxt.u,nxt.i,nxt.lv);
 }
 function startLearnRun(){ runTimed("play",{learn:true}); }
 function trophySVG(){ return `<svg viewBox="0 0 64 64" width="104" height="104" aria-hidden="true"><defs><linearGradient id="tg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFE29A"/><stop offset="1" stop-color="#D3961F"/></linearGradient></defs>
