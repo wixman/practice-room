@@ -162,6 +162,32 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
 .paper .msg{padding:40px 24px;text-align:center;color:#555}
 #osmd{width:100%}
 .countin{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;font:800 140px/1 var(--f-display);color:var(--accent);text-shadow:0 4px 30px rgba(0,0,0,.25)}
+/* learn mode */
+.learnbar{padding:0 max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:10px}
+.lhead{display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;justify-content:space-between}
+.lnow{display:flex;flex-direction:column;gap:1px;min-width:0}
+.lnow .lbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--accent-text)}
+.lnow b{font:700 20px/1.15 var(--f-display);letter-spacing:-.01em}
+.lprog{display:flex;align-items:center;gap:10px;min-width:220px;flex:0 1 340px}
+.lprog .progress{flex:1}
+.lprog span{font-size:13px;color:var(--muted);white-space:nowrap}.lprog b{color:var(--ink);font-weight:600}
+.lsecs{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+.lsec{flex:0 0 auto;scroll-snap-align:center;display:flex;flex-direction:column;gap:4px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px 8px 6px}
+.lsec.cur{border-color:var(--cool);box-shadow:0 0 0 3px var(--cool-soft)}
+.lsec.done{border-color:color-mix(in srgb,var(--gold) 60%,var(--line));background:color-mix(in srgb,var(--gold) 8%,var(--surface))}
+.ltitle{border:0;background:none;font:600 12px var(--f-mono);color:var(--muted);padding:2px 6px;min-height:24px}
+.lsec.cur .ltitle{color:var(--ink)}
+.tick{color:var(--good);font-weight:800}
+.lmedals{display:flex;gap:2px}
+.lm{position:relative;border:0;background:none;padding:3px;border-radius:10px;color:var(--muted);min-width:34px;min-height:40px;display:grid;place-items:center}
+.lm.here{background:var(--cool-soft);box-shadow:inset 0 0 0 2px var(--cool)}
+.lm small{position:absolute;bottom:-2px;left:0;right:0;text-align:center;font-size:9px;color:var(--muted)}
+.medal.on{filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))}
+.bigmedal{display:grid;place-items:center;color:var(--muted)}
+.bigmedal.pop svg{animation:pop .7s cubic-bezier(.2,1.6,.4,1) both}
+@keyframes pop{0%{transform:scale(.2) rotate(-25deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
+.confetti{position:fixed;inset:0;pointer-events:none;z-index:70}
+.lmeta{display:inline-flex;align-items:center;gap:4px}
 /* 88-key strip */
 .kbdwrap{padding:0 max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px))}
 .kbd{position:relative;height:64px;max-width:1400px;margin:0 auto;background:var(--kbd-bg);border-radius:12px 12px 0 0;padding:6px 6px 0;overflow:hidden}
@@ -304,6 +330,7 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
       <div class="console">
         <div class="seg" role="group" aria-label="Mode">
           <button type="button" data-mode="practice" aria-pressed="true">Practice</button>
+          <button type="button" data-mode="learn" aria-pressed="false">Learn</button>
           <button type="button" data-mode="play" aria-pressed="false">Play</button>
         </div>
         <div class="seg" role="group" aria-label="Hands">
@@ -335,6 +362,7 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
         <button class="btn primary big" type="button" id="startBtn">Start</button>
       </div>
     </div>
+    <div class="learnbar" id="learnBar" hidden></div>
     <div class="scorewrap" id="scoreWrap">
       <div class="paper" id="paper"><div id="osmd"></div><div class="msg" id="paperMsg">Loading notation…</div><div class="countin" id="countIn" hidden></div></div>
     </div>
@@ -439,8 +467,11 @@ function parseScore(xml){
     let div=1, staves=1, beats=4, bt=4, mi=0; const tieOpen=new Map(); const graces=new Map(); // staff|voice -> [[grace chord], ...]
     for(const m of kids(part,"measure")){
       const q0= pi===0 ? (measures.length? measures[measures.length-1].q+measures[measures.length-1].len : 0) : (measures[mi]?measures[mi].q:0);
-      let pos=0,maxPos=0,lastStart=0;
+      let pos=0,maxPos=0,lastStart=0; const flags={sys:false,reh:false,dbl:false};
       for(const el of m.children){
+        if(pi===0){ if(el.nodeName==="print"&&(el.getAttribute("new-system")==="yes"||el.getAttribute("new-page")==="yes")) flags.sys=true;
+          if(el.nodeName==="direction"&&el.getElementsByTagName("rehearsal").length) flags.reh=true;
+          if(el.nodeName==="barline"&&(el.getAttribute("location")||"right")==="right"){ const st=kidText(el,"bar-style"), rp=kid(el,"repeat"); if(/light-light|light-heavy|heavy-light|heavy-heavy/.test(st||"")||(rp&&rp.getAttribute("direction")==="backward")) flags.dbl=true; } }
         const n=el.nodeName;
         if(n==="attributes"){
           const d=kidText(el,"divisions"); if(d) div=parseFloat(d)||1;
@@ -482,7 +513,7 @@ function parseScore(xml){
           notes.push(note); if(ties.includes("start")) tieOpen.set(key,note);
         }
       }
-      if(pi===0){ let len=maxPos/div; if(len<=0) len=beats*4/bt; measures.push({number:m.getAttribute("number")||String(mi+1),q:q0,len,beats,bt}); }
+      if(pi===0){ let len=maxPos/div; if(len<=0) len=beats*4/bt; measures.push({number:m.getAttribute("number")||String(mi+1),q:q0,len,beats,bt,...flags}); }
       mi++;
     }
   });
@@ -762,7 +793,7 @@ const View={ osmd:null, ok:false, pos:[], idx:-1, cache:new Map(), colored:[], z
 
 window.addEventListener("resize",()=>{ View.cache.clear(); View.colored=[]; });
 /* ================= app state ================= */
-const S={ pieces:[], collections:[], settings:{latency:30,thresholds:[75,88,95],countIn:1,pianoVol:80,metroVol:70,metroSound:"wood",metroBeats:"all",graces:"score"},
+const S={ pieces:[], collections:[], settings:{latency:30,thresholds:[75,88,95],countIn:1,pianoVol:80,metroVol:70,metroSound:"wood",metroBeats:"all",graces:"score",learnBars:4,learnTempos:[50,75,100],learnTarget:100},
   view:{list:"all",tag:null,q:"",sort:"title"},
   cur:null, score:null, mode:"practice", hands:"B", tempoPct:100, metro:true, other:false, mine:false, swing:false, from:1, to:1, running:null, routine:null };
 async function saveSettings(){ S.settings.updated=Date.now(); await DB.put("meta",{id:"settings",...S.settings}); Cloud.soon(); }
@@ -832,11 +863,12 @@ function renderLibrary(){
         <div style="min-width:0">
           ${p.sample?'<div class="sample">Sample piece</div>':""}
           <div class="t">${esc(p.title)}</div>
-          <div class="meta"><span>${best}</span><span>${ago(p.lastPlayed)}</span></div>
+          <div class="meta"><span>${best}</span><span>${ago(p.lastPlayed)}</span>${p.learn&&p.learn.total?`<span class="lmeta">${medalSVG(p.learn.earned===p.learn.total?"Gold":p.learn.earned?"Silver":"Bronze",p.learn.earned>0,13)}<span class="num">${p.learn.earned}/${p.learn.total}</span> medals</span>`:""}</div>
           <div class="meta">${p.midi?`<span class="mtag" title="${esc(p.midi.name)}">${p.settings&&p.settings.useMidi===false?"MIDI off":"MIDI"}</span>`:""}${(p.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}${!col?cols.map(c=>`<span class="cdot" style="--hue:${hueOf(c.id)}">${esc(c.name)}</span>`).join(""):""}</div>
         </div>
         <div class="acts">
           <button class="btn small" type="button" data-open="practice">Practice</button>
+          <button class="btn small" type="button" data-open="learn">Learn</button>
           <button class="btn small primary" type="button" data-open="play">Play</button>
           <span class="grow"></span>
           <button class="btn small" type="button" data-edit aria-label="Edit ${esc(p.title)}">Edit</button>
@@ -938,8 +970,10 @@ async function openPiece(p,mode){
   const ri=S.routine?S.routine.ids.indexOf(p.id):-1; $("#nextBtn").hidden=!(S.routine&&ri>-1&&ri<S.routine.ids.length-1);
   if(S.routine&&ri>-1) $("#nextBtn").textContent=`Next in ${S.routine.col.name} (${ri+2}/${S.routine.ids.length}) ›`;
   $("#barFrom").max=$("#barTo").max=sc.measures.length; $("#barFrom").value=1; $("#barTo").value=sc.measures.length;
+  if(S.mode==="learn") setupLearn(); renderLearn();
   showView("player"); syncControls(); idleStrip();
   await View.load(p.xml,sc);
+  if(S.mode==="learn"&&View.ok) View.goQ(sc.measures[S.from-1].q);
   if(sc.hasRepeats) toast("This piece has repeat signs. Expand the repeats for accurate scoring.");
 }
 function baseBpm(){ return (S.cur.settings&&S.cur.settings.bpm)||baseTempo(S.score); }
@@ -953,16 +987,21 @@ function syncControls(){
   $$("[data-hands]").forEach(b=>{ b.setAttribute("aria-pressed",b.dataset.hands===S.hands); b.disabled= b.dataset.hands!=="B" && !S.score.hands.includes(b.dataset.hands); });
   $("#tPct").textContent=S.tempoPct+"%"; $("#tBpm").textContent="♩ = "+Math.round(baseBpm()*S.tempoPct/100);
   $("#tgMetro").setAttribute("aria-pressed",S.metro); $("#tgOther").setAttribute("aria-pressed",S.other); $("#tgSwing").setAttribute("aria-pressed",S.swing);
-  $("#startBtn").innerHTML= S.running? '<svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/></svg>Stop' : '<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg>'+(S.mode==="play" ? (S.mine?"Play along":"Start (count-in)") : "Start practice");
+  $("#startBtn").innerHTML= S.running? '<svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/></svg>Stop' : '<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg>'+(S.mode==="play" ? (S.mine?"Play along":"Start (count-in)") : S.mode==="learn" ? (S.learnPos&&S.learnPos.i<S.learnSecs.length?"Start section":"Start whole piece") : "Start practice");
   $("#startBtn").classList.toggle("stop",!!S.running); $("#startBtn").classList.toggle("primary",!S.running);
   const busy=!!S.running;
   for(const el of $$(".deck button, .deck input")){ if(["startBtn","backBtn"].includes(el.id)) continue; el.disabled=busy; }
   if(!busy){ $$("[data-hands]").forEach(b=>b.disabled= b.dataset.hands!=="B" && !S.score.hands.includes(b.dataset.hands)); $("#tgOther").disabled=S.hands==="B"; }
-  if(!busy) $("#tgMine").disabled=S.mode!=="play";
+  if(!busy) $("#tgMine").disabled=S.mode==="practice";
+  if(S.mode==="learn") for(const id of ["#barFrom","#barTo","#tDown","#tUp"]) $(id).disabled=true; // Learn sets bars and tempo
   $("#tgMine").setAttribute("aria-pressed",S.mine);
 }
 function persistPieceSettings(){ const p=S.cur; p.settings={...p.settings,hands:S.hands,tempoPct:S.tempoPct,swing:S.swing}; savePiece(p); }
-$$("[data-mode]").forEach(b=>b.onclick=()=>{ S.mode=b.dataset.mode; syncControls(); idleStrip(); });
+$$("[data-mode]").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+function setMode(mode){ const was=S.mode; S.mode=mode;
+  if(mode==="learn") setupLearn();
+  else if(was==="learn"){ const p=S.cur; S.tempoPct=p.settings.tempoPct||100; S.from=1; S.to=S.score.measures.length; $("#barFrom").value=1; $("#barTo").value=S.to; }
+  renderLearn(); syncControls(); idleStrip(); }
 $$("[data-hands]").forEach(b=>b.onclick=()=>{ S.hands=b.dataset.hands; persistPieceSettings(); syncControls(); });
 $("#tDown").onclick=()=>{ S.tempoPct=clamp(S.tempoPct-5,25,200); persistPieceSettings(); syncControls(); };
 $("#tUp").onclick=()=>{ S.tempoPct=clamp(S.tempoPct+5,25,200); persistPieceSettings(); syncControls(); };
@@ -974,7 +1013,8 @@ $("#zoomIn").onclick=()=>{ View.zoom=clamp(+(View.zoom+.1).toFixed(2),.5,2); Vie
 $("#zoomOut").onclick=()=>{ View.zoom=clamp(+(View.zoom-.1).toFixed(2),.5,2); View.rerender(); };
 $("#backBtn").onclick=()=>{ stopRun(); showView("library"); renderLibrary(); };
 $("#nextBtn").onclick=()=>{ const i=S.routine.ids.indexOf(S.cur.id); const p=S.pieces.find(x=>x.id===S.routine.ids[i+1]); if(p) openPiece(p,S.mode); };
-$("#startBtn").onclick=()=>{ if(S.running) { stopRun(); return; } S.mode==="play"?startPlay():startPractice(); };
+$("#startBtn").onclick=()=>{ if(S.running) { stopRun(); return; } S.mode==="play"?startPlay():S.mode==="learn"?startLearnRun():startPractice(); };
+$("#learnBar").addEventListener("click",learnClick);
 $("#tgMine").onclick=()=>{ S.mine=!S.mine; syncControls(); };
 
 function range(){ const ms=S.score.measures; const a=ms[S.from-1], b=ms[S.to-1]; return {qs:a.q,qe:b.q+b.len,full:S.from===1&&S.to===ms.length}; }
@@ -988,6 +1028,7 @@ function playbackNotes(qs,qe,which){ // which: "mine" | "other"
 /* status strip */
 function idleStrip(){
   const n=S.score?activeNotes(range().qs,range().qe).length:0;
+  if(S.mode==="learn"){ $("#strip").innerHTML=`<div class="note">Learn mode: play each section slow, medium, then at full speed. ${S.settings.learnTarget||100}% earns the medal (bronze, silver, gold). Medals count with both hands. Tap any medal to jump to it. <span class="num">${n} notes in this section</span></div>`; return; }
   $("#strip").innerHTML= S.mode==="play"
     ? `<div class="note">Play mode: count-in, then the score moves at tempo and every note is scored. Full runs, both hands, 100% tempo earn stars. Turn on “Hear my part” to play along with the app.${S.midi?" Playback uses the attached MIDI file.":""} <span class="num">${n} notes</span></div>`
     : `<div class="note">Practice mode: the cursor waits for the right notes, which light up on the keyboard above. Take it at your own pace. <span class="num">${n} notes</span></div>`;
@@ -1047,7 +1088,7 @@ function fmtSecs(s){ return s>=60?`${Math.floor(s/60)}:${String(s%60).padStart(2
 /* ---------- Play (real-time, scored) and Listen ---------- */
 function startPlay(){ runTimed("play"); }
 function startListen(){ runTimed("listen"); }
-function runTimed(kind){
+function runTimed(kind,opts={}){
   const {qs,qe,full}=range();
   const notes= kind==="listen" ? S.score.notes.filter(n=>n.q>=qs-1e-6&&n.q<qe-1e-6) : activeNotes(qs,qe);
   if(!notes.length){ toast("No notes for this hand in these bars."); return; }
@@ -1098,6 +1139,7 @@ function runTimed(kind){
     const total=exp.length; const score=Math.max(0,Math.round(100*(hits-.5*Math.min(extras,total))/total));
     const avg=errs.length?errs.reduce((a,b)=>a+b,0)/errs.length:0;
     if(guided&&hits+extras===0){ toast("Playback finished"); return; }
+    if(opts.learn){ learnResult({score,hits,misses,extras,guided}); return; }
     const counts= full&&S.hands==="B"&&S.tempoPct>=100&&!guided; const stars=starsFor(score);
     const att={date:Date.now(),mode:"play",score,hands:S.hands,tempoPct:S.tempoPct,full,from:S.from,to:S.to,hits,misses,extras,avgMs:Math.round(avg*1000),guided};
     const prev=bestRun(S.cur); recordAttempt(att);
@@ -1115,6 +1157,113 @@ function runTimed(kind){
 }
 function showCount(n,t){ const el=$("#countIn"); const d=Math.max(0,(t-Audio.ctx.currentTime)*1000); setTimeout(()=>{ if(!S.running) return; el.hidden=false; el.textContent=n; },d); }
 async function recordAttempt(a){ const p=S.cur; p.attempts=(p.attempts||[]).concat(a).slice(-300); p.lastPlayed=a.date; p.plays=(p.plays||0)+1; await savePiece(p); }
+
+/* ================= Learn mode: sections × three tempos, medals ================= */
+const LEVELS=[{k:"S",name:"Slow",medal:"Bronze"},{k:"M",name:"Medium",medal:"Silver"},{k:"F",name:"Full speed",medal:"Gold"}];
+function makeSections(score,L){
+  const ms=score.measures, n=ms.length; if(!n) return [];
+  const starts=new Set([0]);
+  ms.forEach((m,i)=>{ if(i>0&&(m.sys||m.reh)) starts.add(i); if(m.dbl&&i+1<n) starts.add(i+1); });
+  if(n>1&&ms[0].len<ms[0].beats*4/ms[0].bt-1e-6) starts.delete(1); // a pickup bar joins the first section
+  const st=[...starts].sort((a,b)=>a-b); const out=[];
+  st.forEach((s,k)=>{ const e=(k+1<st.length?st[k+1]:n)-1, len=e-s+1, parts=Math.ceil(len/L), base=Math.floor(len/parts), extra=len%parts; let a=s;
+    for(let p=0;p<parts;p++){ const sz=base+(p<extra?1:0); out.push({from:a+1,to:a+sz}); a+=sz; } });
+  const end=sec=>ms[sec.to-1].q+ms[sec.to-1].len;
+  return out.filter(sec=>score.notes.some(x=>x.q>=ms[sec.from-1].q-1e-6&&x.q<end(sec)-1e-6));
+}
+function learnKey(sec,lv){ return (sec?`${sec.from}-${sec.to}`:"all")+"|"+LEVELS[lv].k; }
+function learnCells(){ const out=[]; S.learnSecs.forEach((sec,i)=>LEVELS.forEach((_,lv)=>out.push({i,lv,key:learnKey(sec,lv)}))); LEVELS.forEach((_,lv)=>out.push({i:S.learnSecs.length,lv,key:learnKey(null,lv)})); return out; }
+function cellOf(key){ const p=S.cur; p.learn=p.learn||{cells:{}}; return p.learn.cells[key]; }
+function nextLearnTarget(){ return learnCells().find(c=>!(cellOf(c.key)||{}).earned)||null; }
+function learnCounts(){ const cells=learnCells(); return {earned:cells.filter(c=>(cellOf(c.key)||{}).earned).length,total:cells.length}; }
+function setupLearn(){
+  S.learnSecs=makeSections(S.score,S.settings.learnBars||4);
+  const p=S.cur; p.learn=p.learn||{cells:{}};
+  const {earned,total}=learnCounts(); if(p.learn.total!==total||p.learn.earned!==earned){ p.learn.total=total; p.learn.earned=earned; savePiece(p); }
+  const t=nextLearnTarget()||{i:0,lv:0}; selectLearn(t.i,t.lv,false);
+}
+function selectLearn(i,lv,go=true){
+  S.learnPos={i,lv}; const ms=S.score.measures, sec=S.learnSecs[i];
+  S.from=sec?sec.from:1; S.to=sec?sec.to:ms.length; S.tempoPct=(S.settings.learnTempos||[50,75,100])[lv];
+  $("#barFrom").value=S.from; $("#barTo").value=S.to;
+  if(View.ok&&go) View.goQ(ms[S.from-1].q);
+  renderLearn(); syncControls(); idleStrip();
+}
+const MEDAL_C={Bronze:["#E0A06A","#A8622E"],Silver:["#E4E9F0","#9AA4B2"],Gold:["#FFD877","#D3961F"]};
+function medalSVG(kind,on,size=26){ const [a,b]=MEDAL_C[kind]; const id="m"+kind+size;
+  return `<svg viewBox="0 0 32 36" width="${size}" height="${size*36/32}" aria-hidden="true" class="medal ${on?"on":"off"}">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs>
+    <path d="M9 1h6l3 9h-6zM23 1h-6l-3 9h6z" fill="${on?"#5262E6":"none"}" stroke="${on?"none":"currentColor"}" stroke-width="1.4" opacity="${on?1:.5}"/>
+    <circle cx="16" cy="22" r="12" fill="${on?`url(#${id})`:"none"}" stroke="${on?b:"currentColor"}" stroke-width="${on?1.5:1.6}" opacity="${on?1:.55}"/>
+    ${on?`<circle cx="16" cy="22" r="8" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1.2"/><path d="M16 16.6l1.6 3.3 3.6.5-2.6 2.5.6 3.6-3.2-1.7-3.2 1.7.6-3.6-2.6-2.5 3.6-.5z" fill="#fff" fill-opacity=".9"/>`:""}</svg>`; }
+function renderLearn(){
+  const box=$("#learnBar"); if(!box) return; box.hidden=S.mode!=="learn"; if(S.mode!=="learn") return;
+  const pos=S.learnPos, secs=S.learnSecs, {earned,total}=learnCounts(), tgt=nextLearnTarget();
+  const lv=LEVELS[pos.lv], sec=secs[pos.i];
+  const bpm=Math.round(baseBpm()*S.tempoPct/100);
+  const chip=(i,label)=>{ const s=secs[i]; const keys=LEVELS.map((_,l)=>learnKey(s||null,l)); const done=keys.every(k=>(cellOf(k)||{}).earned);
+    return `<div class="lsec ${pos.i===i?"cur":""} ${done?"done":""}">
+      <button type="button" class="ltitle" data-sec="${i}">${label}${done?' <span class="tick" aria-label="complete">✓</span>':""}</button>
+      <div class="lmedals">${LEVELS.map((L,l)=>{ const c=cellOf(keys[l])||{}; const here=pos.i===i&&pos.lv===l;
+        return `<button type="button" class="lm ${here?"here":""}" data-sec="${i}" data-lv="${l}" title="${L.name}: ${c.earned?"earned":c.tries?`best ${c.best}%`:"not tried"}">${medalSVG(L.medal,!!c.earned,22)}${!c.earned&&c.tries?`<small class="num">${c.best}</small>`:""}</button>`; }).join("")}</div></div>`; };
+  box.innerHTML=`<div class="lhead">
+      <div class="lnow"><span class="lbl">${tgt?"Now":"Learned"}</span><b>${sec?`Section ${pos.i+1} of ${secs.length}`:"Whole piece"} · ${lv.name}</b>
+        <span class="note num">${sec?`Bars ${sec.from}–${sec.to}`:`All ${S.score.measures.length} bars`} · ${S.tempoPct}% · ♩ = ${bpm} · ${S.settings.learnTarget||100}% earns ${lv.medal.toLowerCase()}</span></div>
+      <div class="lprog"><div class="progress"><i style="width:${100*earned/total}%"></i></div><span class="num"><b>${earned}</b>/${total} medals</span></div>
+    </div>
+    <div class="lsecs" id="lsecs">${secs.map((s,i)=>chip(i,`${s.from}–${s.to}`)).join("")}${chip(secs.length,"Whole piece")}</div>`;
+  const cur=box.querySelector(".lsec.cur"); if(cur) cur.scrollIntoView({block:"nearest",inline:"center"});
+}
+function learnClick(e){ if(S.running) return; const m=e.target.closest("[data-lv]"); if(m){ selectLearn(+m.dataset.sec,+m.dataset.lv); return; }
+  const t=e.target.closest(".ltitle"); if(t){ const i=+t.dataset.sec; const s=S.learnSecs[i]||null; const lv=LEVELS.findIndex((_,l)=>!(cellOf(learnKey(s,l))||{}).earned); selectLearn(i,lv<0?0:lv); } }
+function learnResult({score,hits,misses,extras,guided}){
+  const p=S.cur, pos=S.learnPos, sec=S.learnSecs[pos.i]||null, key=learnKey(sec,pos.lv), L=LEVELS[pos.lv];
+  const target=S.settings.learnTarget||100; const counts=!guided&&(S.hands==="B"||S.score.hands.length===1);
+  p.learn=p.learn||{cells:{}}; const c=p.learn.cells[key]||{best:0,tries:0,earned:null};
+  c.tries++; if(counts) c.best=Math.max(c.best,score); const earnedNow=counts&&score>=target&&!c.earned; if(earnedNow) c.earned=Date.now();
+  p.learn.cells[key]=c; const {earned,total}=learnCounts(); p.learn.earned=earned; p.learn.total=total;
+  recordAttempt({date:Date.now(),mode:"learn",score,hands:S.hands,tempoPct:S.tempoPct,full:!sec,from:S.from,to:S.to,hits,misses,extras,guided,cell:key});
+  const secDone=LEVELS.every((_,l)=>(cellOf(learnKey(sec,l))||{}).earned), pieceDone=earned===total;
+  const nxt=nextLearnTarget(); const nxtLabel=nxt?`${nxt.i<S.learnSecs.length?`Section ${nxt.i+1}`:"Whole piece"} · ${LEVELS[nxt.lv].name}`:"";
+  const where=`${sec?`Section ${pos.i+1} (bars ${sec.from}–${sec.to})`:"Whole piece"} · ${L.name} ${S.tempoPct}%`;
+  let head, body;
+  if(earnedNow){
+    head= pieceDone?"Piece learned!": secDone&&sec?`Section ${pos.i+1} mastered!`:`${L.medal} medal!`;
+    body=`<div class="bigmedal pop">${pieceDone?trophySVG():medalSVG(L.medal,true,96)}</div><p class="note">${where}</p>`;
+    celebrate(pieceDone?3:secDone?2:1);
+  } else if(c.earned){
+    head="Medal already earned"; body=`<div class="bigmedal">${medalSVG(L.medal,true,72)}</div><div class="score num">${score}%</div><p class="note">${where}</p>`;
+  } else {
+    head= !counts ? (score>=target?"Nice run":"Keep going") : score>=90?"So close":"Keep going";
+    body=`<div class="score num">${score}%</div><p class="note">${where}. ${counts?`${target}% earns the ${L.medal.toLowerCase()} medal`:guided?"Runs with “Hear my part” don't earn medals":"Medals count with both hands"}${c.best>score?`. Best so far ${c.best}%`:""}.</p>`;
+  }
+  sheet(`<div class="result"><h2>${head}</h2>${body}
+    <div class="grid num"><div><b>${hits}</b><span>Correct</span></div><div><b>${misses}</b><span>Missed</span></div><div><b>${extras}</b><span>Wrong</span></div><div><b>${c.tries}</b><span>Tries</span></div></div>
+    <div class="row" style="justify-content:center">${(earnedNow||c.earned)&&nxt?`<button class="btn" id="lAgain">Again</button><button class="btn primary" id="lNext">Next: ${nxtLabel} ›</button>`
+      :`${nxt&&!(nxt.i===pos.i&&nxt.lv===pos.lv)?`<button class="btn" id="lSkip">Skip to ${nxtLabel}</button>`:""}<button class="btn primary" id="lAgain">Try again</button>`}<button class="btn" data-close>Close</button></div></div>`);
+  renderLearn();
+  const go=(i,lv)=>{ closeSheet(); selectLearn(i,lv); startLearnRun(); };
+  const ag=$("#lAgain"); if(ag) ag.onclick=()=>go(pos.i,pos.lv);
+  const nb=$("#lNext"); if(nb) nb.onclick=()=>go(nxt.i,nxt.lv);
+  const sk=$("#lSkip"); if(sk) sk.onclick=()=>go(nxt.i,nxt.lv);
+}
+function startLearnRun(){ runTimed("play",{learn:true}); }
+function trophySVG(){ return `<svg viewBox="0 0 64 64" width="104" height="104" aria-hidden="true"><defs><linearGradient id="tg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFE29A"/><stop offset="1" stop-color="#D3961F"/></linearGradient></defs>
+  <path d="M18 8h28v12a14 14 0 0 1-28 0z" fill="url(#tg)"/><path d="M18 12H9a9 9 0 0 0 9 11M46 12h9a9 9 0 0 1-9 11" fill="none" stroke="#D3961F" stroke-width="3"/>
+  <rect x="28" y="33" width="8" height="9" fill="#D3961F"/><rect x="20" y="42" width="24" height="6" rx="2" fill="url(#tg)"/><rect x="16" y="48" width="32" height="7" rx="2" fill="#5262E6"/>
+  <path d="M32 12.5l2.2 4.5 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5-3.6-3.5 5-.7z" fill="#fff" opacity=".85"/></svg>`; }
+function celebrate(level){
+  try{ const c=Audio.ensure(), t=c.currentTime+.05; const seq=level>=3?[72,76,79,84,88]:level===2?[72,76,79,84]:[76,79,84]; seq.forEach((m,i)=>Audio.tone(m,t+i*.085,.5,.55)); }catch(e){}
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const cv=document.createElement("canvas"); cv.className="confetti"; document.body.appendChild(cv); const dpr=devicePixelRatio||1;
+  cv.width=innerWidth*dpr; cv.height=innerHeight*dpr; const g=cv.getContext("2d"); g.scale(dpr,dpr);
+  const cols=["#F0B44C","#FFD877","#5262E6","#8D99FF","#45D483","#FF6E6E","#ffffff"]; const n=level>=3?220:level===2?150:90;
+  const parts=Array.from({length:n},()=>({x:innerWidth/2+(Math.random()-.5)*120,y:innerHeight*.42,vx:(Math.random()-.5)*14,vy:-Math.random()*13-4,r:Math.random()*Math.PI,vr:(Math.random()-.5)*.3,w:6+Math.random()*6,h:3+Math.random()*4,c:cols[Math.random()*cols.length|0]}));
+  const t0=performance.now(); const frame=now=>{ const k=(now-t0)/1000; g.clearRect(0,0,innerWidth,innerHeight);
+    for(const p of parts){ p.vy+=.38; p.vx*=.99; p.x+=p.vx; p.y+=p.vy; p.r+=p.vr; g.save(); g.globalAlpha=Math.max(0,1-k/2.2); g.translate(p.x,p.y); g.rotate(p.r); g.fillStyle=p.c; g.fillRect(-p.w/2,-p.h/2,p.w,p.h); g.restore(); }
+    if(k<2.2) requestAnimationFrame(frame); else cv.remove(); };
+  requestAnimationFrame(frame);
+}
 
 /* ================= settings, latency calibration, backup ================= */
 $("#midiPill").onclick=()=>{ MidiIn.access?MidiIn.bind():MidiIn.init(); openSettings(); };
@@ -1136,6 +1285,10 @@ function openSettings(){
       <div class="row"><label class="field">Metronome sound<select id="stMs"><option value="wood">Woodblock</option><option value="hat">Hi-hat</option><option value="beep">Beep</option></select></label>
         <label class="field">Metronome clicks on<select id="stMb"><option value="all">Every beat</option><option value="24">Beats 2 and 4 (jazz)</option></select></label>
         <button class="btn small" id="stTest" type="button" style="align-self:end">Test sound</button></div></div>
+    <div class="field"><span>Learn mode</span>
+      <div class="row"><label class="field">Section length<select id="stLb"><option value="2">Up to 2 bars</option><option value="4">Up to 4 bars</option><option value="8">Up to 8 bars</option></select></label>
+        <label class="field">Medal at<select id="stLt"><option value="100">100%</option><option value="95">95%</option><option value="90">90%</option></select></label></div>
+      <div class="row num">Slow <input type="number" id="stT1" min="20" max="100"> % · Medium <input type="number" id="stT2" min="20" max="150"> % · Full <input type="number" id="stT3" min="50" max="200"> %</div></div>
     <label class="field">Grace notes<select id="stGr"><option value="score">Scored: play them just before the main note</option><option value="optional">Optional: allowed, but not required</option></select></label>
     <label class="field">Count-in<select id="stCi"><option value="1" ${S.settings.countIn==1?"selected":""}>1 bar</option><option value="2" ${S.settings.countIn==2?"selected":""}>2 bars</option></select></label>
     <div class="field"><span>Backup</span><div class="note">Your library lives in this browser on this device. Save a backup file now and then.</div>
@@ -1143,6 +1296,7 @@ function openSettings(){
     <div class="row end"><button class="btn primary" id="stOk" type="button">Done</button></div>`);
   $("#stRe").onclick=async()=>{ await MidiIn.init(); openSettings(); };
   $("#stMs").value=S.settings.metroSound; $("#stMb").value=S.settings.metroBeats; $("#stGr").value=S.settings.graces||"score";
+  $("#stLb").value=String(S.settings.learnBars||4); $("#stLt").value=String(S.settings.learnTarget||100); [$("#stT1").value,$("#stT2").value,$("#stT3").value]=(S.settings.learnTempos||[50,75,100]).map(String);
   const ps=()=>{ const el=$("#pianoStatus"); if(!el) return; el.textContent= Audio.status==="ready"?`Piano: ${Audio.source}`: Audio.status==="loading"?"Piano: loading samples…": Audio.status==="failed"?`Piano: ${Audio.source}. Check the connection and reopen the app.`:"Piano: not loaded yet"; };
   Audio.onstatus=ps; ps();
   const live=()=>{ S.settings.pianoVol=+$("#stPv").value; S.settings.metroVol=+$("#stMv").value; S.settings.metroSound=$("#stMs").value; S.settings.metroBeats=$("#stMb").value; Audio.setVolumes(); };
@@ -1151,6 +1305,8 @@ function openSettings(){
     for(let b=0;b<4;b++){ if(S.settings.metroBeats==="24"&&b%2===0) continue; Audio.click(t+1.8+b*.5,S.settings.metroBeats!=="24"&&b===0); } };
   $("#stOk").onclick=async()=>{ S.settings.latency=clamp(parseFloat($("#stLat").value)||0,0,300);
     const a=[+$("#st1").value,+$("#st2").value,+$("#st3").value].map(x=>clamp(x||0,1,100)).sort((x,y)=>x-y); S.settings.thresholds=a; S.settings.countIn=+$("#stCi").value; S.settings.graces=$("#stGr").value;
+    S.settings.learnBars=+$("#stLb").value; S.settings.learnTarget=+$("#stLt").value; S.settings.learnTempos=[+$("#stT1").value||50,+$("#stT2").value||75,+$("#stT3").value||100].map(x=>clamp(x,20,200));
+    if(S.mode==="learn"&&!$("#viewPlayer").hidden) setupLearn();
     S.settings.pianoVol=+$("#stPv").value; S.settings.metroVol=+$("#stMv").value; S.settings.metroSound=$("#stMs").value; S.settings.metroBeats=$("#stMb").value; Audio.setVolumes();
     await saveSettings(); closeSheet(); renderLibrary(); };
   $("#stCal").onclick=calibrate; $("#stExp").onclick=exportBackup; $("#bkIn").onchange=importBackup;
@@ -1241,15 +1397,16 @@ const Cloud={ cfg:null, state:"off", detail:"", busy:false, timer:null, again:fa
         if(row.deleted){ if(local&&(local.updated||0)<=row.updated){ S.pieces.splice(i,1); await DB.del("pieces",row.id); changed=true; } continue; }
         const d=row.data;
         if(!local){ const p={...d,xml:null,_synced:row.updated}; if(p.midi) p.midi={name:p.midi.name,b64:null}; S.pieces.push(p); needFiles.push(p); changed=true; continue; }
-        const merged=mergeAttempts(local.attempts,d.attempts); const attemptsGrew=merged.length>(local.attempts||[]).length;
+        const merged=mergeAttempts(local.attempts,d.attempts); const ml=mergeLearn(local.learn,d.learn);
+        const attemptsGrew=merged.length>(local.attempts||[]).length||learnSig(ml)!==learnSig(local.learn);
         if(row.updated>(local.updated||0)){
           const keepXml= local.xmlRev===d.xmlRev ? local.xml : null; const keepMidi= local.midiRev===d.midiRev&&local.midi ? local.midi.b64 : null;
-          const p={...d,attempts:merged,lastPlayed:Math.max(local.lastPlayed||0,d.lastPlayed||0)||null,plays:Math.max(local.plays||0,d.plays||0),xml:keepXml,
+          const p={...d,attempts:merged,learn:ml,lastPlayed:Math.max(local.lastPlayed||0,d.lastPlayed||0)||null,plays:Math.max(local.plays||0,d.plays||0),xml:keepXml,
             midi:d.midi?{name:d.midi.name,b64:keepMidi}:undefined,updated:row.updated,_synced:row.updated,_xmlPushed:d.xmlRev,_midiPushed:d.midiRev};
           if(!p.midi) delete p.midi;
-          if(merged.length>(d.attempts||[]).length) p.updated=Date.now(); // we hold runs the server hasn't seen yet
+          if(merged.length>(d.attempts||[]).length||learnSig(ml)!==learnSig(d.learn)) p.updated=Date.now(); // we hold runs or medals the server hasn't seen yet
           S.pieces[i]=p; if(S.cur&&S.cur.id===p.id) S.cur=p; if(!keepXml||(p.midi&&!keepMidi)) needFiles.push(p); else await DB.put("pieces",p); changed=true;
-        } else if(attemptsGrew){ local.attempts=merged; local.lastPlayed=Math.max(local.lastPlayed||0,d.lastPlayed||0)||null; await DB.put("pieces",local); changed=true; }
+        } else if(attemptsGrew){ local.attempts=merged; local.learn=ml; local.lastPlayed=Math.max(local.lastPlayed||0,d.lastPlayed||0)||null; await DB.put("pieces",local); changed=true; }
       } else if(row.kind==="collection"){
         const i=S.collections.findIndex(x=>x.id===row.id), local=S.collections[i];
         if(row.deleted){ if(local&&(local.updated||0)<=row.updated){ S.collections.splice(i,1); await DB.del("collections",row.id); changed=true; } continue; }
@@ -1305,6 +1462,12 @@ const Cloud={ cfg:null, state:"off", detail:"", busy:false, timer:null, again:fa
 };
 function pickSession(d,prev={}){ return {access_token:d.access_token,refresh_token:d.refresh_token||prev.refresh_token,expires_at:d.expires_at||(d.expires_in?Math.floor(Date.now()/1000)+d.expires_in:null),user_id:(d.user&&d.user.id)||prev.user_id,email:(d.user&&d.user.email)||prev.email}; }
 function pieceData(p){ const {xml,_synced,_xmlPushed,_midiPushed,...rest}=p; if(rest.midi) rest.midi={name:rest.midi.name}; return rest; }
+function mergeLearn(a,b){ // medals: keep the earliest award, best score and most tries from either device
+  const out={cells:{}}; for(const src of [a,b]) for(const [k,c] of Object.entries((src&&src.cells)||{})){ const o=out.cells[k];
+    out.cells[k]= o ? {best:Math.max(o.best||0,c.best||0),tries:Math.max(o.tries||0,c.tries||0),earned:(o.earned&&c.earned)?Math.min(o.earned,c.earned):(o.earned||c.earned||null)} : {...c}; }
+  const t=(a&&a.total)||(b&&b.total)||0; if(t){ out.total=t; out.earned=Object.values(out.cells).filter(c=>c.earned).length; }
+  return out; }
+const learnSig=l=>JSON.stringify(Object.entries((l&&l.cells)||{}).sort().map(([k,c])=>[k,c.best,c.tries,!!c.earned]));
 function mergeAttempts(a=[],b=[]){ const seen=new Map(); for(const x of [...(a||[]),...(b||[])]) seen.set(x.date+"|"+x.mode,x); return [...seen.values()].sort((x,y)=>x.date-y.date).slice(-300); }
 async function getTombstones(){ try{ const t=(await DB.all("meta")).find(x=>x.id==="tombstones"); return t?t.list:[]; }catch(e){ return []; } }
 async function addTombstone(kind,id){ const list=await getTombstones(); list.push({kind,id,updated:Date.now()}); await DB.put("meta",{id:"tombstones",list}); Cloud.soon(); }

@@ -4,6 +4,7 @@ A piano practice app for MusicXML pieces, played on a MIDI keyboard.
 
 - **Library**: import MusicXML (.mxl / .musicxml), group pieces into collections, tag, search and track scores.
 - **Practice mode**: the cursor waits until you play the right notes.
+- **Learn mode**: each piece is split into short sections; play each one slow, medium and at full speed and earn bronze, silver and gold medals at 100%, then the whole piece.
 - **Play mode**: count-in, real-time scoring, stars for full runs at tempo.
 - Sampled grand piano, woodblock / hi-hat metronome, live 88-key display.
 - Optional MIDI file per piece: import it alongside the score (matching file name) or attach it from Edit, and the app plays that performance for “Hear my part” / “Hear other hand”.
