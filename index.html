@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Practice Room</title>
+<script>try{ const t=localStorage.getItem("pr-theme"); if(t==="light"||t==="dark") document.documentElement.dataset.theme=t; }catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
 <style>
@@ -163,6 +164,13 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
 .paper .msg{padding:40px 24px;text-align:center;color:#555}
 #osmd{width:100%}
 .countin{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;font:800 140px/1 var(--f-display);color:var(--accent);text-shadow:0 4px 30px rgba(0,0,0,.25)}
+/* theme button shows the mode you'd switch to */
+#themeBtn .ic-moon{display:none} body.is-light #themeBtn .ic-sun{display:none} body.is-light #themeBtn .ic-moon{display:inline}
+/* full screen / focus: just the controls and the score */
+#fsBtn .fs-out{display:none} body.focus #fsBtn .fs-in{display:none} body.focus #fsBtn .fs-out{display:inline}
+body.focus .top, body.focus .deck>.deckrow{display:none}
+body.focus .deck{padding-top:max(10px,env(safe-area-inset-top,0px))}
+body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
 /* learn mode */
 .learnbar{padding:0 max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:10px}
 .lhead{display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;justify-content:space-between}
@@ -273,6 +281,7 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
     <div class="spacer"></div>
     <button class="pill cloud off" id="cloudPill" type="button" title="Sync across devices"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 18h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.3 9.5 4.3 4.3 0 0 0 7 18z"/></svg><span id="cloudText">Sign in to sync</span></button>
     <button class="pill off" id="midiPill" type="button" title="Keyboard connection"><span class="dot"></span><span id="midiText">No keyboard</span></button>
+    <button class="iconbtn" id="themeBtn" type="button" aria-label="Switch to dark mode" title="Light / dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><g class="ic-sun"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></g><path class="ic-moon" d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg></button>
     <button class="iconbtn" id="settingsBtn" type="button" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
   </header>
 
@@ -364,6 +373,7 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
         <div class="group">
           <button class="iconbtn" type="button" id="zoomOut" aria-label="Smaller notation">−</button>
           <button class="iconbtn" type="button" id="zoomIn" aria-label="Larger notation">+</button>
+          <button class="iconbtn" type="button" id="fsBtn" aria-label="Full screen" title="Full screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path class="fs-in" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><path class="fs-out" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg></button>
         </div>
         <button class="btn primary big" type="button" id="startBtn">Start</button>
       </div>
@@ -1029,7 +1039,7 @@ function syncControls(){
   $("#startBtn").innerHTML= S.running? '<svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/></svg>Stop' : '<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg>'+(S.mode==="play" ? (S.mine?"Play along":"Start (count-in)") : S.mode==="learn" ? (S.learnPlan&&S.learnPos&&S.learnPlan.units[S.learnPos.u].sections[S.learnPos.i]?"Start section":S.learnPlan&&S.learnPlan.multi?"Start whole key":"Start whole piece") : "Start practice");
   $("#startBtn").classList.toggle("stop",!!S.running); $("#startBtn").classList.toggle("primary",!S.running);
   const busy=!!S.running;
-  for(const el of $$(".deck button, .deck input")){ if(["startBtn","backBtn"].includes(el.id)) continue; el.disabled=busy; }
+  for(const el of $$(".deck button, .deck input")){ if(["startBtn","backBtn","fsBtn","tgKbd"].includes(el.id)) continue; el.disabled=busy; }
   if(!busy){ $$("[data-hands]").forEach(b=>b.disabled= b.dataset.hands!=="B" && !S.score.hands.includes(b.dataset.hands)); $("#tgOther").disabled=S.hands==="B"; }
   if(!busy) $("#tgMine").disabled=S.mode==="practice";
   if(S.mode==="learn") for(const id of ["#barFrom","#barTo","#tDown","#tUp"]) $(id).disabled=true; // Learn sets bars and tempo
@@ -1051,11 +1061,28 @@ $("#tgSwing").onclick=()=>{ S.swing=!S.swing; persistPieceSettings(); syncContro
 $("#barFrom").onchange=$("#barTo").onchange=()=>{ const n=S.score.measures.length; let a=clamp(parseInt($("#barFrom").value)||1,1,n), b=clamp(parseInt($("#barTo").value)||n,1,n); if(b<a) b=a; S.from=a; S.to=b; $("#barFrom").value=a; $("#barTo").value=b; if(View.ok) View.goQ(S.score.measures[a-1].q); };
 $("#zoomIn").onclick=()=>{ View.zoom=clamp(+(View.zoom+.1).toFixed(2),.5,2); View.rerender(); };
 $("#zoomOut").onclick=()=>{ View.zoom=clamp(+(View.zoom-.1).toFixed(2),.5,2); View.rerender(); };
-$("#backBtn").onclick=()=>{ stopRun(); showView("library"); renderLibrary(); };
+$("#backBtn").onclick=()=>{ stopRun(); setFocus(false); showView("library"); renderLibrary(); };
 $("#nextBtn").onclick=()=>{ const i=S.routine.ids.indexOf(S.cur.id); const p=S.pieces.find(x=>x.id===S.routine.ids[i+1]); if(p) openPiece(p,S.mode); };
 $("#startBtn").onclick=()=>{ if(S.running) { stopRun(); return; } S.mode==="play"?startPlay():S.mode==="learn"?startLearnRun():startPractice(); };
 $("#learnBar").addEventListener("click",learnClick);
 $("#tgMine").onclick=()=>{ S.mine=!S.mine; syncControls(); };
+/* Light / dark: follows the device until you choose; the choice is kept per device */
+const darkMQ=matchMedia("(prefers-color-scheme: dark)");
+function effectiveTheme(){ return document.documentElement.dataset.theme||(darkMQ.matches?"dark":"light"); }
+function syncThemeBtn(){ const dark=effectiveTheme()==="dark"; document.body.classList.toggle("is-light",!dark); const b=$("#themeBtn"); b.setAttribute("aria-label",dark?"Switch to light mode":"Switch to dark mode"); b.title=dark?"Light mode":"Dark mode"; }
+function setTheme(t){ if(t==="system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme=t; try{ localStorage.setItem("pr-theme",t); }catch(e){} syncThemeBtn(); }
+$("#themeBtn").onclick=()=>setTheme(effectiveTheme()==="dark"?"light":"dark");
+darkMQ.addEventListener?darkMQ.addEventListener("change",syncThemeBtn):darkMQ.addListener(syncThemeBtn);
+syncThemeBtn();
+/* Full screen where the browser allows it; the focus layout works everywhere (iPad MIDI browsers often have no full-screen API) */
+function setFocus(on){ document.body.classList.toggle("focus",on); $("#fsBtn").setAttribute("aria-label",on?"Exit full screen":"Full screen"); $("#fsBtn").title=on?"Exit full screen":"Full screen";
+  const d=document, el=d.documentElement, isFs=!!(d.fullscreenElement||d.webkitFullscreenElement);
+  try{ if(on&&!isFs){ const r=(el.requestFullscreen||el.webkitRequestFullscreen); if(r){ const pr=r.call(el); if(pr&&pr.catch) pr.catch(()=>{}); } }
+       else if(!on&&isFs){ const x=(d.exitFullscreen||d.webkitExitFullscreen); if(x){ const pr=x.call(d); if(pr&&pr.catch) pr.catch(()=>{}); } } }catch(e){}
+  setTimeout(()=>{ View.cache.clear(); View.colored=[]; },300); }
+$("#fsBtn").onclick=()=>setFocus(!document.body.classList.contains("focus"));
+for(const ev of ["fullscreenchange","webkitfullscreenchange"]) document.addEventListener(ev,()=>{ if(!(document.fullscreenElement||document.webkitFullscreenElement)&&document.body.classList.contains("focus")) setFocus(false); });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&$("#scrim").hidden&&document.body.classList.contains("focus")) setFocus(false); });
 $("#tgKbd").onclick=()=>{ S.settings.showKbd=!S.settings.showKbd; syncControls(); saveSettings(); };
 
 function range(){ const ms=S.score.measures; const a=ms[S.from-1], b=ms[S.to-1]; return {qs:a.q,qe:b.q+b.len,full:S.from===1&&S.to===ms.length}; }
@@ -1067,15 +1094,9 @@ function playbackNotes(qs,qe,which){ // which: "mine" | "other"
   return src.filter(n=>n.q>=qs-1e-6&&n.q<qe-1e-6&&(which==="mine" ? (S.hands==="B"||n.hand===S.hands) : (S.hands!=="B"&&n.hand!==S.hands))); }
 
 /* status strip */
-function idleStrip(){
-  const n=S.score?activeNotes(range().qs,range().qe).length:0;
-  if(S.mode==="learn"){ $("#strip").innerHTML=`<div class="note">Learn mode: play each section slow, medium, then at full speed. ${S.settings.learnTarget||100}% earns the medal (bronze, silver, gold). Medals count with both hands. Tap any medal to jump to it. <span class="num">${n} notes in this section</span></div>`; return; }
-  $("#strip").innerHTML= S.mode==="play"
-    ? `<div class="note">Play mode: count-in, then the score moves at tempo and every note is scored. Full runs, both hands, 100% tempo earn stars. Turn on “Hear my part” to play along with the app.${S.midi?" Playback uses the attached MIDI file.":""} <span class="num">${n} notes</span></div>`
-    : `<div class="note">Practice mode: the cursor waits for the right notes${S.settings.showKbd?", which light up on the keyboard above":""}. Take it at your own pace. <span class="num">${n} notes</span></div>`;
-}
+function idleStrip(){ const st=$("#strip"); st.innerHTML=""; st.hidden=true; }
 function liveStrip(kind){
-  $("#strip").innerHTML= kind==="play"
+  $("#strip").hidden=false; $("#strip").innerHTML= kind==="play"
     ? `<div class="stat good"><b class="num" id="sHit">0</b><span>Correct</span></div><div class="stat bad"><b class="num" id="sMiss">0</b><span>Missed</span></div><div class="stat warn"><b class="num" id="sExtra">0</b><span>Wrong</span></div>
        <div class="timing" title="Last note: early ← → late"><small style="left:0">early</small><small style="right:0">late</small><i id="sTiming"></i></div><div class="progress"><i id="sProg"></i></div><div class="stat"><b class="num" id="sBar">1</b><span>Bar</span></div>`
     : kind==="listen" ? `<div class="note">Listening…</div><div class="progress"><i id="sProg"></i></div><div class="stat"><b class="num" id="sBar">1</b><span>Bar</span></div>`
@@ -1363,11 +1384,13 @@ function openSettings(){
         <label class="field">Medal at<select id="stLt"><option value="100">100%</option><option value="95">95%</option><option value="90">90%</option></select></label></div>
       <div class="row num">Slow <input type="number" id="stT1" min="20" max="100"> % · Medium <input type="number" id="stT2" min="20" max="150"> % · Full <input type="number" id="stT3" min="50" max="200"> %</div></div>
     <label class="field">Grace notes<select id="stGr"><option value="score">Scored: play them just before the main note</option><option value="optional">Optional: allowed, but not required</option></select></label>
+    <label class="field">Appearance<select id="stTheme"><option value="system">Match this device</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
     <label class="field">Count-in<select id="stCi"><option value="1" ${S.settings.countIn==1?"selected":""}>1 bar</option><option value="2" ${S.settings.countIn==2?"selected":""}>2 bars</option></select></label>
     <div class="field"><span>Backup</span><div class="note">Your library lives in this browser on this device. Save a backup file now and then.</div>
       <div class="row"><button class="btn small" id="stExp" type="button">Save backup</button><label class="btn small" for="bkIn">Restore backup</label><input type="file" id="bkIn" accept=".json,application/json" hidden></div></div>
     <div class="row end"><button class="btn primary" id="stOk" type="button">Done</button></div>`);
   $("#stRe").onclick=async()=>{ await MidiIn.init(); openSettings(); };
+  try{ $("#stTheme").value=localStorage.getItem("pr-theme")||"system"; }catch(e){ $("#stTheme").value="system"; } $("#stTheme").onchange=e=>setTheme(e.target.value);
   $("#stMs").value=S.settings.metroSound; $("#stMb").value=S.settings.metroBeats; $("#stGr").value=S.settings.graces||"score";
   $("#stLb").value=String(S.settings.learnBars||4); $("#stLt").value=String(S.settings.learnTarget||100); [$("#stT1").value,$("#stT2").value,$("#stT3").value]=(S.settings.learnTempos||[50,75,100]).map(String);
   const ps=()=>{ const el=$("#pianoStatus"); if(!el) return; el.textContent= Audio.status==="ready"?`Piano: ${Audio.source}`: Audio.status==="loading"?"Piano: loading samples…": Audio.status==="failed"?`Piano: ${Audio.source}. Check the connection and reopen the app.`:"Piano: not loaded yet"; };
