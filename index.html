@@ -143,6 +143,32 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
 .reorder{display:flex;flex-direction:column;gap:4px}
 .reorder button{width:34px;height:26px;border:1px solid var(--line);background:var(--surface-2);font-size:11px;border-radius:8px}
 .empty{grid-column:1/-1;background:var(--surface);border:1px dashed var(--line);border-radius:var(--r);padding:32px;text-align:center;color:var(--muted)}
+.crumb{border:0;background:none;color:var(--accent-text);font-weight:700;font-size:13px;padding:4px 0;margin-bottom:4px;display:block}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.tile{position:relative;display:flex;flex-direction:column;gap:8px;text-align:left;min-height:148px;padding:18px;border-radius:var(--r);border:1px solid var(--line);background:linear-gradient(155deg,hsl(var(--hue,230) 70% 58% / .17),transparent 62%),var(--surface);box-shadow:var(--shadow);color:var(--ink);transition:transform .1s,border-color .15s}
+.tile:hover{border-color:hsl(var(--hue,230) 70% 55% / .65)} .tile:active{transform:scale(.985)}
+.tile .tn{font:800 20px/1.15 var(--f-display);letter-spacing:-.01em;overflow-wrap:anywhere}
+.tile .ts{color:var(--muted);font-size:13px;display:flex;flex-wrap:wrap;gap:4px 10px}
+.tile .sw{width:12px;height:12px;border-radius:50%;background:hsl(var(--hue,230) 75% 58%);box-shadow:0 0 10px hsl(var(--hue,230) 75% 58% / .6)}
+.tile .bar{margin-top:auto;height:6px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+.tile .bar i{display:block;height:100%;width:var(--p,0%);background:hsl(var(--hue,230) 72% 55%);border-radius:inherit}
+.tile.ghost{border-style:dashed;background:transparent;box-shadow:none;align-items:center;justify-content:center;color:var(--muted);font-weight:700}
+.tile.ghost .tn{font-size:16px;color:var(--muted)}
+.tile.quiet{--hue:225}
+.homehead{display:flex;align-items:center;gap:10px;margin:22px 0 10px;color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em}
+.pick{width:30px;height:30px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;background:var(--surface-2);color:transparent;font-weight:900;font-size:15px}
+.piece.sel{border-color:var(--cool);box-shadow:0 0 0 2px var(--cool-soft),var(--shadow)}
+.piece.sel .pick{background:var(--cool);border-color:var(--cool);color:#fff}
+.selecting .piece{cursor:pointer;user-select:none;-webkit-user-select:none}
+.selecting .piece .acts{display:none}
+.bulk{position:sticky;bottom:10px;z-index:6;display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:16px;padding:10px 12px;border-radius:20px;background:var(--surface);border:1px solid var(--line);box-shadow:0 12px 32px rgba(0,0,0,.22)}
+.bulk .n{font-weight:800;padding:0 6px;min-width:92px}
+.bulk .btn{min-height:40px;padding:0 14px}
+@media (max-width:560px){ .bulk{gap:6px;padding:8px} .bulk .btn{padding:0 11px} .bulk .n{min-width:0} }
+.pickrow{display:grid;gap:6px;max-height:44vh;overflow:auto}
+.pickrow button{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-weight:600;text-align:left}
+.pickrow button .sw{width:10px;height:10px;border-radius:50%;background:hsl(var(--hue,40) 75% 58%)}
+.pickrow button .count{margin-left:auto;color:var(--muted);font:500 12px var(--f-mono)}
 .sample{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--accent-text);margin-bottom:2px}
 
 /* player */
@@ -322,6 +348,7 @@ body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
     <div class="main">
       <div class="mainhead">
         <div style="min-width:0">
+          <button class="crumb" id="homeCrumb" type="button" hidden>‹ Home</button>
           <h2 id="listTitle">All pieces</h2>
           <div class="sub num" id="listSub"></div>
         </div>
@@ -336,6 +363,7 @@ body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
       </div>
       <div class="tools">
         <input type="search" id="search" placeholder="Search titles and tags" aria-label="Search">
+        <button class="btn small" id="selectBtn" type="button" aria-pressed="false">Select</button>
         <select id="sort" aria-label="Sort">
           <option value="manual">Collection order</option>
           <option value="title">Title A–Z</option>
@@ -347,6 +375,7 @@ body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
       </div>
       <div class="chips" id="tagChips"></div>
       <div class="list" id="pieceList"></div>
+      <div class="bulk" id="bulkBar" hidden></div>
     </div>
   </section>
 
@@ -869,7 +898,7 @@ const View={ osmd:null, ok:false, pos:[], idx:-1, cache:new Map(), colored:[], z
 window.addEventListener("resize",()=>{ View.cache.clear(); View.colored=[]; View.boxes=null; clearTimeout(window.__dimT); window.__dimT=setTimeout(applyDim,400); });
 /* ================= app state ================= */
 const S={ pieces:[], collections:[], settings:{latency:30,thresholds:[75,88,95],countIn:1,pianoVol:80,metroVol:70,metroSound:"wood",metroBeats:"all",graces:"score",learnBars:4,learnTempos:[50,75,100],learnTarget:100,showKbd:false},
-  view:{list:"all",tag:null,q:"",sort:"title"},
+  view:{list:"home",tag:null,q:"",sort:"title"}, sel:new Set(), selecting:false,
   cur:null, score:null, mode:"practice", hands:"B", tempoPct:100, metro:true, other:false, mine:false, swing:false, from:1, to:1, running:null, routine:null };
 async function saveSettings(){ S.settings.updated=Date.now(); await DB.put("meta",{id:"settings",...S.settings}); Cloud.soon(); }
 async function savePiece(p){ p.updated=Date.now(); await DB.put("pieces",p); Cloud.soon(); }
@@ -898,7 +927,8 @@ function listPieces(){
   let arr=S.pieces.filter(p=>p.xml); const v=S.view; let col=null;
   if(v.list==="recent") arr=arr.filter(p=>p.lastPlayed).sort((a,b)=>b.lastPlayed-a.lastPlayed);
   else if(v.list==="nogold") arr=arr.filter(p=>{ const b=bestRun(p); return !b||starsFor(b.score)<3; });
-  else if(v.list!=="all"){ col=S.collections.find(c=>c.id===v.list); arr=col?col.pieceIds.map(id=>S.pieces.find(p=>p.id===id)).filter(Boolean):[]; }
+  else if(v.list==="unsorted") arr=arr.filter(p=>!S.collections.some(c=>c.pieceIds.includes(p.id)));
+  else if(v.list!=="all"&&v.list!=="home"){ col=S.collections.find(c=>c.id===v.list); arr=col?col.pieceIds.map(id=>S.pieces.find(p=>p.id===id)).filter(Boolean):[]; }
   if(v.tag) arr=arr.filter(p=>(p.tags||[]).includes(v.tag));
   if(v.q){ const q=v.q.toLowerCase(); arr=arr.filter(p=>p.title.toLowerCase().includes(q)||(p.tags||[]).some(t=>t.toLowerCase().includes(q))); }
   const s=v.sort, sc=p=>{ const b=bestRun(p,{fullOnly:false}); return b?b.score:-1; };
@@ -923,28 +953,36 @@ function fillSectionCounts(){ if(secTimer) return;
   secTimer=setTimeout(step,30); }
 function renderLibrary(){
   const v=S.view;
-  const smart=[["all","All pieces",S.pieces.length],["recent","Recently played",S.pieces.filter(p=>p.lastPlayed).length],["nogold","Not gold yet",S.pieces.filter(p=>{const b=bestRun(p);return !b||starsFor(b.score)<3;}).length]];
-  const ICON={all:"♪",recent:"↺",nogold:"★"};
+  const smart=[["home","Home",S.collections.length],["all","All pieces",S.pieces.length],["recent","Recently played",S.pieces.filter(p=>p.lastPlayed).length],["nogold","Not gold yet",S.pieces.filter(p=>{const b=bestRun(p);return !b||starsFor(b.score)<3;}).length]];
+  const ICON={home:"⌂",all:"♪",recent:"↺",nogold:"★"};
   $("#smartList").innerHTML=smart.map(([id,n,c])=>`<button class="navitem" data-list="${id}" aria-current="${v.list===id}"><span class="ico" aria-hidden="true">${ICON[id]}</span><span>${n}</span><span class="count">${c}</span></button>`).join("");
   $("#colList").innerHTML=S.collections.sort((a,b)=>a.created-b.created).map(c=>`<button class="navitem" data-list="${c.id}" aria-current="${v.list===c.id}" style="--hue:${hueOf(c.id)}"><span class="sw"></span><span>${esc(c.name)}</span><span class="count">${c.pieceIds.filter(id=>S.pieces.some(p=>p.id===id)).length}</span></button>`).join("")||`<div class="note" style="padding:0 10px">Group pieces into collections like “Warm-ups” or “Bebop Hanon”.</div>`;
+  const home= v.list==="home"&&!v.q&&!v.tag;
+  if(home){ S.selecting=false; S.sel.clear(); }
   const {arr,col}=listPieces();
-  const name= v.list==="all"?"All pieces":v.list==="recent"?"Recently played":v.list==="nogold"?"Not gold yet":(col?col.name:"Collection");
+  const name= v.list==="home"?(v.q||v.tag?"Search":"Home"):v.list==="unsorted"?"Not in a collection":v.list==="all"?"All pieces":v.list==="recent"?"Recently played":v.list==="nogold"?"Not gold yet":(col?col.name:"Collection");
   $("#listTitle").textContent=name;
-  $("#listSub").textContent=`${arr.length} piece${arr.length===1?"":"s"}${v.tag?` tagged “${v.tag}”`:""}`;
+  $("#listSub").textContent= home?`${S.collections.length} collection${S.collections.length===1?"":"s"} · ${S.pieces.length} piece${S.pieces.length===1?"":"s"}`:`${arr.length} piece${arr.length===1?"":"s"}${v.tag?` tagged “${v.tag}”`:""}`;
+  $("#homeCrumb").hidden=v.list==="home"; $("#sort").hidden=home; $("#selectBtn").hidden=home||!arr.length; $("#selectBtn").setAttribute("aria-pressed",S.selecting); $("#selectBtn").textContent=S.selecting?"Done":"Select";
+  $("#viewLibrary").classList.toggle("selecting",S.selecting);
+  const vis=new Set(arr.map(p=>p.id)); for(const id of [...S.sel]) if(!vis.has(id)) S.sel.delete(id);
+  renderBulk(arr,col);
+  if(home){ $("#pieceList").className="tiles"; $("#pieceList").innerHTML=homeTiles(); return; }
+  $("#pieceList").className="list";
   $("#colActs").hidden=!col; $("#routineBtn").disabled=!col||!arr.length;
   const sortSel=$("#sort"); sortSel.querySelector('[value="manual"]').disabled=!col; if(!col&&v.sort==="manual"){ v.sort="title"; } sortSel.value=v.sort;
   const tags=[...new Set(S.pieces.flatMap(p=>p.tags||[]))].sort();
   $("#tagChips").innerHTML=tags.length?tags.map(t=>`<button class="chip" data-tag="${esc(t)}" aria-pressed="${v.tag===t}">${esc(t)}</button>`).join(""):"";
-  const manual= col&&v.sort==="manual"&&!v.q&&!v.tag;
+  const manual= col&&v.sort==="manual"&&!v.q&&!v.tag&&!S.selecting;
   $("#pieceList").innerHTML= arr.length? arr.map((p,i)=>{
       const b=bestRun(p), any=bestRun(p,{fullOnly:false});
       const stars=b?starsFor(b.score):0, shown=b||any;
       const best= b?`Best ${b.score}%`: any?`Best ${any.score}% <span title="Stars count for full runs, both hands, 100% tempo">(${any.full?"":"section, "}${any.hands==="B"?"":any.hands==="R"?"right hand, ":"left hand, "}${any.tempoPct}% tempo)</span>`:"No scored runs yet";
       const cols=S.collections.filter(c=>c.pieceIds.includes(p.id));
-      const ring= manual
+      const ring= S.selecting ? `<div class="badge"><span class="pick" aria-hidden="true">✓</span></div>` : manual
         ? `<div class="reorder"><button type="button" data-move="-1" aria-label="Move up" ${i===0?"disabled":""}>▲</button><button type="button" data-move="1" aria-label="Move down" ${i===arr.length-1?"disabled":""}>▼</button></div>`
         : `<div class="badge"><div class="ring ${stars===3?"gold":""} ${shown?"":"none"}" style="--p:${shown?shown.score:0}"><b>${shown?shown.score+"<small>%</small>":"—"}</b></div>${starsHTML(stars)}</div>`;
-      return `<article class="piece ${stars===3?"gold":""}" data-id="${p.id}">
+      return `<article class="piece ${stars===3?"gold":""} ${S.sel.has(p.id)?"sel":""}" data-id="${p.id}" ${S.selecting?`role="checkbox" aria-checked="${S.sel.has(p.id)}" tabindex="0"`:""}>
         ${ring}
         <div style="min-width:0">
           ${p.sample?'<div class="sample">Sample piece</div>':""}
@@ -965,13 +1003,91 @@ function renderLibrary(){
         </div></article>`; }).join("")
     : `<div class="empty">${S.pieces.length?"Nothing matches. Clear the search or tag filter.":"Import MusicXML files to start your library."}${col&&!v.q&&!v.tag?"<br>Add pieces to this collection from their Edit button, or import while this collection is open.":""}</div>`;
 }
-$("#smartList").onclick=$("#colList").onclick=e=>{ const b=e.target.closest("[data-list]"); if(!b) return; S.view.list=b.dataset.list; S.view.tag=null; const col=S.collections.find(c=>c.id===S.view.list); S.view.sort=col?"manual":(S.view.list==="recent"?"recent":"title"); renderLibrary(); };
+function colStats(ids){
+  const ps=ids.map(id=>S.pieces.find(p=>p.id===id)).filter(p=>p&&p.xml);
+  let gold=0, earned=0, total=0;
+  for(const p of ps){ const b=bestRun(p); if(b&&starsFor(b.score)===3) gold++;
+    const info=sectionCount(p); if(info===null){ fillSectionCounts(); continue; }
+    total+=info.total; if(p.learn) earned+=Object.entries(p.learn.cells||{}).filter(([k,c])=>c.earned&&info.keys.has(k)).length; }
+  return {n:ps.length,gold,earned,total};
+}
+function homeTiles(){
+  const tile=(list,name,ids,hue,cls="")=>{ const st=colStats(ids); const pct=st.total?Math.round(st.earned/st.total*100):st.n?Math.round(st.gold/st.n*100):0;
+    return `<button type="button" class="tile ${cls}" data-list="${list}" ${hue!=null?`style="--hue:${hue}"`:""}>
+      <span class="sw" aria-hidden="true"></span><span class="tn">${esc(name)}</span>
+      <span class="ts"><span><span class="num">${st.n}</span> piece${st.n===1?"":"s"}</span>${st.gold?`<span>★ <span class="num">${st.gold}</span> gold</span>`:""}${st.total?`<span><span class="num">${st.earned}/${st.total}</span> medals</span>`:""}</span>
+      <span class="bar" title="${pct}% done"><i style="--p:${pct}%"></i></span></button>`; };
+  const cols=S.collections.slice().sort((a,b)=>(a.order??a.created)-(b.order??b.created));
+  const unsorted=S.pieces.filter(p=>p.xml&&!S.collections.some(c=>c.pieceIds.includes(p.id))).map(p=>p.id);
+  let h=cols.map(c=>tile(c.id,c.name,c.pieceIds,hueOf(c.id))).join("");
+  if(unsorted.length) h+=tile("unsorted","Not in a collection",unsorted,null,"quiet");
+  h+=tile("all","All pieces",S.pieces.map(p=>p.id),null,"quiet");
+  h+=`<button type="button" class="tile ghost" data-newcol><span class="tn">+ New collection</span></button>`;
+  return h;
+}
+function renderBulk(arr,col){
+  const bar=$("#bulkBar"); if(!S.selecting){ bar.hidden=true; bar.innerHTML=""; return; }
+  const n=S.sel.size, all=arr.length&&arr.every(p=>S.sel.has(p.id)), dis=n?"":"disabled";
+  bar.hidden=false;
+  bar.innerHTML=`<span class="n num">${n} selected</span>
+    <button class="btn small" type="button" data-bulk="all">${all?"Select none":"Select all"}</button>
+    <span class="grow" style="flex:1"></span>
+    <button class="btn small" type="button" data-bulk="add" ${dis}>Add to…</button>
+    ${col?`<button class="btn small" type="button" data-bulk="move" ${dis}>Move to…</button>
+    <button class="btn small" type="button" data-bulk="top" ${dis} title="Move to the top of this collection">To top</button>
+    <button class="btn small" type="button" data-bulk="bottom" ${dis} title="Move to the bottom of this collection">To bottom</button>
+    <button class="btn small" type="button" data-bulk="remove" ${dis} title="Take out of this collection (keeps the pieces)">Remove</button>`:""}
+    <button class="btn small danger" type="button" data-bulk="delete" ${dis}>Delete</button>
+    <button class="btn small primary" type="button" data-bulk="done">Done</button>`;
+}
+function setSelecting(on){ S.selecting=on; if(!on) S.sel.clear(); renderLibrary(); }
+async function deletePieces(ps){
+  const ids=new Set(ps.map(p=>p.id));
+  for(const p of ps){ await DB.del("pieces",p.id); if(!p.sample) await addTombstone("piece",p.id); }
+  S.pieces=S.pieces.filter(p=>!ids.has(p.id));
+  for(const c of S.collections) if(c.pieceIds.some(id=>ids.has(id))){ c.pieceIds=c.pieceIds.filter(id=>!ids.has(id)); await saveCol(c); }
+}
+function chooseCollection(title,exclude,cb){
+  const cols=S.collections.filter(c=>c!==exclude).sort((a,b)=>a.created-b.created);
+  sheet(`<h2>${esc(title)}</h2>
+    <div class="pickrow">${cols.map(c=>`<button type="button" data-cid="${c.id}" style="--hue:${hueOf(c.id)}"><span class="sw"></span><span>${esc(c.name)}</span><span class="count">${c.pieceIds.length}</span></button>`).join("")||'<p class="note">No other collections yet.</p>'}</div>
+    <form class="row" id="pcNew" style="margin-top:6px"><input type="text" id="pcName" placeholder="New collection" style="flex:1;min-width:0" aria-label="New collection name"><button class="btn" type="submit">Create</button></form>
+    <div class="row end"><button class="btn" type="button" data-close>Cancel</button></div>`);
+  $("#sheet .pickrow").onclick=async e=>{ const b=e.target.closest("[data-cid]"); if(!b) return; closeSheet(); await cb(S.collections.find(c=>c.id===b.dataset.cid)); };
+  $("#pcNew").onsubmit=async e=>{ e.preventDefault(); const name=$("#pcName").value.trim(); if(!name) return; const c={id:uid(),name,pieceIds:[],created:Date.now()}; S.collections.push(c); closeSheet(); await cb(c); };
+}
+$("#homeCrumb").onclick=()=>goList("home");
+$("#selectBtn").onclick=()=>setSelecting(!S.selecting);
+$("#bulkBar").onclick=async e=>{
+  const b=e.target.closest("[data-bulk]"); if(!b||b.disabled) return; const act=b.dataset.bulk;
+  const {arr,col}=listPieces(); const chosen=arr.filter(p=>S.sel.has(p.id)); const ids=chosen.map(p=>p.id);
+  if(act==="done") return setSelecting(false);
+  if(act==="all"){ const all=arr.every(p=>S.sel.has(p.id)); S.sel=new Set(all?[]:arr.map(p=>p.id)); return renderLibrary(); }
+  if(act==="add"||act==="move") return chooseCollection(act==="add"?`Add ${ids.length} piece${ids.length===1?"":"s"} to…`:`Move ${ids.length} piece${ids.length===1?"":"s"} to…`, act==="move"?col:null, async target=>{
+    const add=ids.filter(id=>!target.pieceIds.includes(id)); target.pieceIds.push(...add); await saveCol(target);
+    if(act==="move"&&col){ col.pieceIds=col.pieceIds.filter(id=>!S.sel.has(id)); await saveCol(col); }
+    toast(`${act==="move"?"Moved":"Added"} ${ids.length} to ${target.name}`); S.sel.clear(); if(act==="move") S.selecting=false; renderLibrary(); });
+  if(act==="top"||act==="bottom"){ const sel=col.pieceIds.filter(id=>S.sel.has(id)), rest=col.pieceIds.filter(id=>!S.sel.has(id)); col.pieceIds= act==="top"?[...sel,...rest]:[...rest,...sel]; S.view.sort="manual"; await saveCol(col); return renderLibrary(); }
+  if(act==="remove"){ col.pieceIds=col.pieceIds.filter(id=>!S.sel.has(id)); await saveCol(col); toast(`Removed ${ids.length} from ${col.name}`); S.sel.clear(); return renderLibrary(); }
+  if(act==="delete"){ sheet(`<h2>Delete ${ids.length} piece${ids.length===1?"":"s"}?</h2><p>This removes ${ids.length===1?"it":"them"} and ${ids.length===1?"its":"their"} score history and medals from your library on every synced device.${col?" To only take them out of this collection, use “Remove from collection” instead.":""}</p><div class="row end"><button class="btn" data-close>Cancel</button><button class="btn danger" id="bdOk">Delete ${ids.length}</button></div>`);
+    $("#bdOk").onclick=async()=>{ await deletePieces(chosen); closeSheet(); S.sel.clear(); toast(`Deleted ${ids.length} piece${ids.length===1?"":"s"}`); renderLibrary(); }; }
+};
+$("#smartList").onclick=$("#colList").onclick=e=>{ const b=e.target.closest("[data-list]"); if(!b) return; goList(b.dataset.list); };
+function goList(id){ S.view.list=id; S.view.tag=null; S.view.q=""; $("#search").value=""; S.selecting=false; S.sel.clear(); const col=S.collections.find(c=>c.id===id); S.view.sort=col?"manual":(id==="recent"?"recent":"title"); renderLibrary(); $(".main").scrollTop=0; }
+function chooseNewCollection(){
+  sheet(`<h2>New collection</h2><form id="ncForm"><label class="field">Name<input type="text" id="ncName" placeholder="e.g. Warm-ups, Bebop Hanon, Standards"></label><div class="row end"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Create</button></div></form>`);
+  $("#ncForm").onsubmit=async e=>{ e.preventDefault(); const name=$("#ncName").value.trim(); if(!name) return; const c={id:uid(),name,pieceIds:[],created:Date.now()}; S.collections.push(c); await saveCol(c); closeSheet(); goList(c.id); };
+}
+$("#pieceList").addEventListener("keydown",e=>{ if(!S.selecting||(e.key!==" "&&e.key!=="Enter")) return; const card=e.target.closest(".piece"); if(!card) return; e.preventDefault(); card.click(); });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&S.selecting&&$("#scrim").hidden&&!$("#viewLibrary").hidden) setSelecting(false); });
 $("#tagChips").onclick=e=>{ const b=e.target.closest("[data-tag]"); if(!b) return; S.view.tag=S.view.tag===b.dataset.tag?null:b.dataset.tag; renderLibrary(); };
 $("#search").oninput=e=>{ S.view.q=e.target.value.trim(); renderLibrary(); };
 $("#sort").onchange=e=>{ S.view.sort=e.target.value; renderLibrary(); };
-$("#newColForm").onsubmit=async e=>{ e.preventDefault(); const name=$("#newColName").value.trim(); if(!name) return; const c={id:uid(),name,pieceIds:[],created:Date.now()}; S.collections.push(c); await saveCol(c); $("#newColName").value=""; S.view.list=c.id; S.view.sort="manual"; renderLibrary(); };
+$("#newColForm").onsubmit=async e=>{ e.preventDefault(); const name=$("#newColName").value.trim(); if(!name) return; const c={id:uid(),name,pieceIds:[],created:Date.now()}; S.collections.push(c); await saveCol(c); $("#newColName").value=""; goList(c.id); };
 $("#pieceList").onclick=async e=>{
+  const tl=e.target.closest(".tile"); if(tl){ if(tl.hasAttribute("data-newcol")) chooseNewCollection(); else goList(tl.dataset.list); return; }
   const card=e.target.closest(".piece"); if(!card) return; const p=S.pieces.find(x=>x.id===card.dataset.id);
+  if(S.selecting){ S.sel.has(p.id)?S.sel.delete(p.id):S.sel.add(p.id); renderLibrary(); return; }
   const mv=e.target.closest("[data-move]");
   if(mv){ const col=S.collections.find(c=>c.id===S.view.list); const i=col.pieceIds.indexOf(p.id), j=i+parseInt(mv.dataset.move); if(j<0||j>=col.pieceIds.length) return; [col.pieceIds[i],col.pieceIds[j]]=[col.pieceIds[j],col.pieceIds[i]]; await saveCol(col); renderLibrary(); return; }
   if(e.target.closest("[data-edit]")){ editPiece(p); return; }
@@ -1005,7 +1121,7 @@ $("#renameColBtn").onclick=()=>{ const col=S.collections.find(c=>c.id===S.view.l
   $("#rnOk").onclick=async()=>{ const n=$("#rnName").value.trim(); if(n){ col.name=n; await saveCol(col); } closeSheet(); renderLibrary(); }; };
 $("#deleteColBtn").onclick=()=>{ const col=S.collections.find(c=>c.id===S.view.list);
   sheet(`<h2>Delete “${esc(col.name)}”?</h2><p>The pieces stay in your library. Only the collection is removed.</p><div class="row end"><button class="btn" data-close>Cancel</button><button class="btn danger" id="dcOk">Delete collection</button></div>`);
-  $("#dcOk").onclick=async()=>{ S.collections=S.collections.filter(c=>c!==col); await DB.del("collections",col.id); await addTombstone("collection",col.id); S.view.list="all"; S.view.sort="title"; closeSheet(); renderLibrary(); }; };
+  $("#dcOk").onclick=async()=>{ S.collections=S.collections.filter(c=>c!==col); await DB.del("collections",col.id); await addTombstone("collection",col.id); closeSheet(); goList("home"); }; };
 
 /* sheets */
 function sheet(html){ $("#sheet").innerHTML=html; $("#scrim").hidden=false; const f=$("#sheet").querySelector("input,button"); if(f) f.focus(); }
