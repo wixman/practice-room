@@ -117,7 +117,8 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
 .chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .list{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
 .piece{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto;gap:12px 14px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow)}
-.piece .t{font:700 17px/1.25 var(--f-display);letter-spacing:-.01em;overflow-wrap:anywhere}
+.piece .t{font:700 17px/1.25 var(--f-display);letter-spacing:-.01em;overflow-wrap:anywhere;display:block;width:100%;text-align:left;border:0;background:none;padding:0;color:var(--ink);cursor:pointer}
+.piece .t:hover{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:3px;text-decoration-color:var(--accent)}
 .piece .meta{display:flex;flex-wrap:wrap;gap:4px 10px;color:var(--muted);font-size:12.5px;margin-top:4px;align-items:center}
 .piece .acts{grid-column:1/-1;justify-content:flex-start;border-top:1px dashed var(--line);padding-top:12px}
 .piece.gold{border-color:color-mix(in srgb,var(--gold) 55%,var(--line))}
@@ -358,6 +359,7 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
         <button class="toggle" type="button" id="tgMine" aria-pressed="false" title="The app plays the notes you're playing, so you can play along">Hear my part</button>
         <button class="toggle" type="button" id="tgOther" aria-pressed="false">Hear other hand</button>
         <button class="toggle" type="button" id="tgSwing" aria-pressed="false">Swing 8ths</button>
+        <button class="toggle" type="button" id="tgKbd" aria-pressed="false" title="Show the 88-key strip under the score">Keyboard</button>
         <div class="spacer"></div>
         <div class="group">
           <button class="iconbtn" type="button" id="zoomOut" aria-label="Smaller notation">−</button>
@@ -370,7 +372,7 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
     <div class="scorewrap" id="scoreWrap">
       <div class="paper" id="paper"><div id="osmd"></div><div class="msg" id="paperMsg">Loading notation…</div><div class="countin" id="countIn" hidden></div></div>
     </div>
-    <div class="kbdwrap"><div class="kbd" aria-hidden="true"><div class="keys" id="kbd"></div></div></div>
+    <div class="kbdwrap" id="kbdWrap" hidden><div class="kbd" aria-hidden="true"><div class="keys" id="kbd"></div></div></div>
     <div class="strip" id="strip"></div>
   </section>
 </div>
@@ -799,7 +801,7 @@ const View={ osmd:null, ok:false, pos:[], idx:-1, cache:new Map(), colored:[], z
 
 window.addEventListener("resize",()=>{ View.cache.clear(); View.colored=[]; });
 /* ================= app state ================= */
-const S={ pieces:[], collections:[], settings:{latency:30,thresholds:[75,88,95],countIn:1,pianoVol:80,metroVol:70,metroSound:"wood",metroBeats:"all",graces:"score",learnBars:4,learnTempos:[50,75,100],learnTarget:100},
+const S={ pieces:[], collections:[], settings:{latency:30,thresholds:[75,88,95],countIn:1,pianoVol:80,metroVol:70,metroSound:"wood",metroBeats:"all",graces:"score",learnBars:4,learnTempos:[50,75,100],learnTarget:100,showKbd:false},
   view:{list:"all",tag:null,q:"",sort:"title"},
   cur:null, score:null, mode:"practice", hands:"B", tempoPct:100, metro:true, other:false, mine:false, swing:false, from:1, to:1, running:null, routine:null };
 async function saveSettings(){ S.settings.updated=Date.now(); await DB.put("meta",{id:"settings",...S.settings}); Cloud.soon(); }
@@ -879,7 +881,7 @@ function renderLibrary(){
         ${ring}
         <div style="min-width:0">
           ${p.sample?'<div class="sample">Sample piece</div>':""}
-          <div class="t">${esc(p.title)}</div>
+          <button type="button" class="t" data-open="play" title="Open in Play mode">${esc(p.title)}</button>
           <div class="meta"><span>${best}</span><span>${ago(p.lastPlayed)}</span></div>
           <div class="meta">${(()=>{ const info=sectionCount(p); if(info===null){ fillSectionCounts(); return ""; } if(!info.sections) return "";
               const n=info.sections, total=info.total, e=p.learn?Object.entries(p.learn.cells||{}).filter(([k,c])=>c.earned&&info.keys.has(k)).length:0;
@@ -1016,6 +1018,7 @@ function syncControls(){
   if(!busy) $("#tgMine").disabled=S.mode==="practice";
   if(S.mode==="learn") for(const id of ["#barFrom","#barTo","#tDown","#tUp"]) $(id).disabled=true; // Learn sets bars and tempo
   $("#tgMine").setAttribute("aria-pressed",S.mine);
+  $("#tgKbd").setAttribute("aria-pressed",!!S.settings.showKbd); $("#tgKbd").disabled=false; $("#kbdWrap").hidden=!S.settings.showKbd;
 }
 function persistPieceSettings(){ const p=S.cur; p.settings={...p.settings,hands:S.hands,tempoPct:S.tempoPct,swing:S.swing}; savePiece(p); }
 $$("[data-mode]").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
@@ -1037,6 +1040,7 @@ $("#nextBtn").onclick=()=>{ const i=S.routine.ids.indexOf(S.cur.id); const p=S.p
 $("#startBtn").onclick=()=>{ if(S.running) { stopRun(); return; } S.mode==="play"?startPlay():S.mode==="learn"?startLearnRun():startPractice(); };
 $("#learnBar").addEventListener("click",learnClick);
 $("#tgMine").onclick=()=>{ S.mine=!S.mine; syncControls(); };
+$("#tgKbd").onclick=()=>{ S.settings.showKbd=!S.settings.showKbd; syncControls(); saveSettings(); };
 
 function range(){ const ms=S.score.measures; const a=ms[S.from-1], b=ms[S.to-1]; return {qs:a.q,qe:b.q+b.len,full:S.from===1&&S.to===ms.length}; }
 function activeNotes(qs,qe){ return S.score.notes.filter(n=>n.q>=qs-1e-6&&n.q<qe-1e-6&&(S.hands==="B"||n.hand===S.hands)); }
@@ -1052,7 +1056,7 @@ function idleStrip(){
   if(S.mode==="learn"){ $("#strip").innerHTML=`<div class="note">Learn mode: play each section slow, medium, then at full speed. ${S.settings.learnTarget||100}% earns the medal (bronze, silver, gold). Medals count with both hands. Tap any medal to jump to it. <span class="num">${n} notes in this section</span></div>`; return; }
   $("#strip").innerHTML= S.mode==="play"
     ? `<div class="note">Play mode: count-in, then the score moves at tempo and every note is scored. Full runs, both hands, 100% tempo earn stars. Turn on “Hear my part” to play along with the app.${S.midi?" Playback uses the attached MIDI file.":""} <span class="num">${n} notes</span></div>`
-    : `<div class="note">Practice mode: the cursor waits for the right notes, which light up on the keyboard above. Take it at your own pace. <span class="num">${n} notes</span></div>`;
+    : `<div class="note">Practice mode: the cursor waits for the right notes${S.settings.showKbd?", which light up on the keyboard above":""}. Take it at your own pace. <span class="num">${n} notes</span></div>`;
 }
 function liveStrip(kind){
   $("#strip").innerHTML= kind==="play"
@@ -1393,7 +1397,7 @@ async function importBackup(e){
    The device keeps a full copy in IndexedDB; Supabase holds the shared copy.
    items: one row per piece / collection / settings (JSON), files: score XML and MIDI per piece (gzipped, base64).
    Conflicts: the newer edit wins per record, and Play/Practice history is merged so no run is lost. */
-const LOCAL_ONLY_SETTINGS=["latency"]; // device-specific
+const LOCAL_ONLY_SETTINGS=["latency","showKbd"]; // device-specific
 const Cloud={ cfg:null, state:"off", detail:"", busy:false, timer:null, again:false,
   load(){ try{ this.cfg=JSON.parse(localStorage.getItem("pr-cloud")||"null"); }catch(e){ this.cfg=null; } },
   save(){ try{ localStorage.setItem("pr-cloud",JSON.stringify(this.cfg)); }catch(e){} },
