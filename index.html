@@ -359,8 +359,8 @@ body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
           <button class="btn small" id="renameColBtn" type="button">Rename</button>
           <button class="btn small danger" id="deleteColBtn" type="button">Delete</button>
         </div>
-        <label class="btn primary" for="fileInput" title="MusicXML scores, plus optional MIDI files with matching names">Import MusicXML / MIDI</label>
-        <input type="file" id="fileInput" accept=".mxl,.musicxml,.xml,.mid,.midi,application/vnd.recordare.musicxml,application/vnd.recordare.musicxml+xml,application/xml,text/xml,audio/midi,audio/x-midi" multiple hidden>
+        <label class="btn primary" for="fileInput" title="MusicXML scores, MIDI files with matching names, or a book file (.json) made for Practice Room">Import MusicXML / MIDI</label>
+        <input type="file" id="fileInput" accept=".mxl,.musicxml,.xml,.mid,.midi,.json,application/json,application/vnd.recordare.musicxml,application/vnd.recordare.musicxml+xml,application/xml,text/xml,audio/midi,audio/x-midi" multiple hidden>
       </div>
       <div class="tools">
         <input type="search" id="search" placeholder="Search titles and tags" aria-label="Search">
@@ -1385,7 +1385,12 @@ $("#fileInput").onchange=async e=>{
   const files=[...e.target.files]; e.target.value=""; if(!files.length) return;
   const col=S.collections.find(c=>c.id===S.view.list); let ok=0; const errs=[]; let repeats=0; const added=[]; let attached=0;
   const isMidi=f=>/\.midi?$/i.test(f.name)||/midi/i.test(f.type);
-  for(const f of files.filter(f=>!isMidi(f))){
+  const isBook=f=>/\.json$/i.test(f.name)||/json/i.test(f.type);
+  let books=0;
+  for(const f of files.filter(isBook)){
+    try{ const n=await importBook(JSON.parse(await f.text())); ok+=n.count; books++; if(!col&&files.length===1){ S.view.list=n.col.id; S.view.sort="manual"; } }
+    catch(err){ errs.push(`${f.name}: ${err.message}`); } }
+  for(const f of files.filter(f=>!isMidi(f)&&!isBook(f))){
     try{ const xml=await fileToXML(await f.arrayBuffer(),f.name); const sc=parseScore(xml); if(!sc.notes.length) throw new Error("no notes found");
       if(sc.hasRepeats) repeats++;
       const p={id:uid(),title:sc.title||f.name.replace(/\.(mxl|musicxml|xml)$/i,"").replace(/[_-]+/g," "),fileName:f.name,xml,xmlRev:uid(),added:Date.now(),tags:[],attempts:[],lastPlayed:null,plays:0,settings:{}};
@@ -1401,8 +1406,28 @@ $("#fileInput").onchange=async e=>{
   if(col) await saveCol(col);
   renderLibrary();
   if(errs.length) sheet(`<h2>Some files didn't import</h2><p>${ok} piece${ok===1?"":"s"} imported${attached?`, ${attached} MIDI file${attached===1?"":"s"} attached`:""}.</p><ul>${errs.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><div class="row end"><button class="btn primary" data-close>OK</button></div>`);
+  else if(books&&files.length===books) toast(`Imported ${books===1?"the book":books+" books"}: ${ok} exercise${ok===1?"":"s"}`);
   else toast(`${ok?`Imported ${ok} piece${ok===1?"":"s"}${col?` into ${col.name}`:""}`:""}${ok&&attached?" · ":""}${attached?`${attached} MIDI file${attached===1?"":"s"} attached`:""}${repeats?` · ${repeats} with repeat signs: expand repeats for accurate scoring`:""}`);
 };
+/* A book file: one collection with its exercises in book order.
+   {app:"practice-room-book", version:1, title, collection, tags:[], pieces:[{title, xml, tags, bpm, swing, midi:{name,b64}}]} */
+async function importBook(d){
+  if(!d||d.app!=="practice-room-book"||!Array.isArray(d.pieces)) throw new Error("not a Practice Room book file");
+  const name=d.collection||d.title||"Imported book";
+  let c=S.collections.find(x=>x.name===name); if(!c){ c={id:uid(),name,pieceIds:[],created:Date.now()}; S.collections.push(c); }
+  let count=0;
+  for(const it of d.pieces){
+    const sc=parseScore(it.xml); if(!sc.notes.length) continue;
+    const old=c.pieceIds.map(id=>S.pieces.find(p=>p.id===id)).find(p=>p&&p.title===it.title); // re-importing a book updates it in place
+    const p=old||{id:uid(),added:Date.now()+count,attempts:[],lastPlayed:null,plays:0,settings:{}};
+    Object.assign(p,{title:it.title||sc.title||"Untitled",fileName:(it.title||"piece")+".musicxml",xml:it.xml,xmlRev:uid(),tags:[...new Set([...(p.tags||[]),...(d.tags||[]),...(it.tags||[])])]});
+    p.settings={...(p.settings||{})}; if(it.bpm) p.settings.bpm=it.bpm; if(it.swing!=null) p.settings.swing=!!it.swing;
+    if(it.midi&&it.midi.b64){ p.midi=it.midi; p.midiRev=uid(); p.settings.useMidi=true; }
+    if(!old){ S.pieces.push(p); c.pieceIds.push(p.id); }
+    await savePiece(p); count++;
+  }
+  await saveCol(c); return {count,col:c};
+}
 $("#routineBtn").onclick=()=>{ const col=S.collections.find(c=>c.id===S.view.list); const ids=listPieces().arr.map(p=>p.id); if(!ids.length) return; S.routine={col,ids}; openPiece(S.pieces.find(p=>p.id===ids[0]),"practice"); };
 $("#renameColBtn").onclick=()=>{ const col=S.collections.find(c=>c.id===S.view.list);
   sheet(`<h2>Rename collection</h2><label class="field">Name<input type="text" id="rnName" value="${esc(col.name)}"></label><div class="row end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="rnOk">Save</button></div>`);
