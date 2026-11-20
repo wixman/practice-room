@@ -1,0 +1,4 @@
+Backing band samples (both public domain, CC0):
+- Double bass: "D. Smolken's Double Bass" (1958 Otto Rubner bass, pizzicato), played and sampled by D. Smolken, Karoryfer Samples.
+- Drums: "Virtuosity Drums" by Versilian Studios (sfzinstruments/virtuosity_drums).
+Trimmed, mixed (kick/snare close mics + overheads; ride overheads only) and packed into bass.m4a and drums.m4a.
