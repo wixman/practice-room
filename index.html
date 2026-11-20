@@ -731,7 +731,7 @@ const View={ osmd:null, ok:false, pos:[], idx:-1, cache:new Map(), colored:[], z
       this.osmd=new lib.OpenSheetMusicDisplay(host,{autoResize:true,backend:"svg",drawTitle:true,drawCredits:false,drawPartNames:false,followCursor:false,defaultFontFamily:"Times New Roman",cursorsOptions:[{type:0,color:"#5262E6",alpha:.3,follow:false}]});
       this.rehearsals=score.rehearsals||[];
       try{ const r=this.osmd.EngravingRules; if(r){ if("RehearsalMarkFontSize" in r) r.RehearsalMarkFontSize=12; } }catch(e){}
-      const draw=this.osmd.render.bind(this.osmd); this.osmd.render=(...a)=>{ const out=draw(...a); try{ this.restyle(); }catch(e){ console.warn("restyle",e); } return out; };
+      const draw=this.osmd.render.bind(this.osmd); this.osmd.render=(...a)=>{ const out=draw(...a); try{ this.restyle(); this.keepTextInside(); }catch(e){ console.warn("restyle",e); } return out; };
       await this.osmd.load(xml); this.osmd.Zoom=this.zoom; this.osmd.render();
       const c=this.osmd.cursor; c.show(); c.reset();
       let guard=0; while(!c.Iterator.EndReached&&guard++<200000){ this.pos.push({q:c.Iterator.currentTimeStamp.RealValue*4,m:c.Iterator.CurrentMeasureIndex}); c.next(); }
@@ -769,6 +769,22 @@ const View={ osmd:null, ok:false, pos:[], idx:-1, cache:new Map(), colored:[], z
         for(let k=0;k<4;k++){ const moved={...box,y:box.y-dy}; const clash=texts.filter(o=>o!==t&&!isMark(o)).map(bb).find(o=>hit(moved,o)); if(!clash) break; dy+= (moved.y+moved.h)-clash.y+pad; }
         if(dy>0){ g.setAttribute("transform",`translate(0,${(-dy).toFixed(1)})`);
           const top=box.y-dy; if(top<0){ const pt=parseFloat(svg.style.marginTop)||0; svg.style.marginTop=Math.max(pt,-top+4)+"px"; } } // keep a mark lifted above the first system on the page
+      }
+    }
+  },
+  /* Pull text that hangs past the left or right edge of the score back inside (e.g. a long heading on bar 1). */
+  keepTextInside(){
+    for(const svg of $$("#osmd svg")){
+      const box=svg.getBoundingClientRect(); if(!box.width) continue;
+      const vb=svg.viewBox&&svg.viewBox.baseVal; const k=vb&&vb.width?vb.width/box.width:1; const pad=8;
+      for(const t of svg.querySelectorAll("text")){
+        const r=t.getBoundingClientRect(); if(!r.width) continue;
+        let dx=0; if(r.left<box.left+pad) dx=box.left+pad-r.left; else if(r.right>box.right-pad) dx=Math.max(box.left+pad-r.left,box.right-pad-r.right);
+        if(Math.abs(dx)<.5) continue;
+        const el=t.parentNode&&t.parentNode.dataset&&t.parentNode.dataset.pr!==undefined?t.parentNode:t; // a boxed rehearsal mark moves with its box
+        const prev=(el.getAttribute("transform")||"").match(/translate\(([-\d.]+)[ ,]+([-\d.]+)\)/);
+        const x=(prev?parseFloat(prev[1]):0)+dx*k, y=prev?parseFloat(prev[2]):0;
+        el.setAttribute("transform",`translate(${x.toFixed(1)},${y.toFixed(1)})`);
       }
     }
   },
