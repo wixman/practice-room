@@ -461,16 +461,26 @@ const STAR='<svg viewBox="0 0 24 24"><path d="M12 2.6l2.9 6 6.5.8-4.8 4.5 1.2 6.
 function starsHTML(n,total=3){ let h='<span class="stars" aria-label="'+n+' of '+total+' stars">'; for(let i=0;i<total;i++) h+=STAR.replace('<path','<path class="'+(i<n?'on':'offs')+'"'); return h+'</span>'; }
 
 /* ================= storage (IndexedDB, memory fallback) ================= */
-const DB={ db:null, mem:{pieces:new Map(),collections:new Map(),meta:new Map()},
-  async open(){ try{ this.db=await new Promise((res,rej)=>{ const r=indexedDB.open("practice-room",1);
+/* IndexedDB with automatic reconnect: iPad Safari closes idle or backgrounded connections
+   ("the database connection is closing"), so every operation reopens and retries once if that happens. */
+const DB={ db:null, ok:false, opening:null, mem:{pieces:new Map(),collections:new Map(),meta:new Map()},
+  connect(){ if(this.db) return Promise.resolve(this.db); if(this.opening) return this.opening;
+    this.opening=new Promise((res,rej)=>{ const r=indexedDB.open("practice-room",1);
       r.onupgradeneeded=()=>{ const d=r.result; for(const s of ["pieces","collections","meta"]) if(!d.objectStoreNames.contains(s)) d.createObjectStore(s,{keyPath:"id"}); };
-      r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }catch(e){ console.warn("IndexedDB unavailable, using memory",e); this.db=null; } },
-  async all(store){ if(!this.db) return [...this.mem[store].values()];
-    return new Promise((res,rej)=>{ const r=this.db.transaction(store).objectStore(store).getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); },
-  async put(store,obj){ if(!this.db){ this.mem[store].set(obj.id,structuredClone(obj)); return; }
-    return new Promise((res,rej)=>{ const tx=this.db.transaction(store,"readwrite"); tx.objectStore(store).put(obj); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); },
-  async del(store,id){ if(!this.db){ this.mem[store].delete(id); return; }
-    return new Promise((res,rej)=>{ const tx=this.db.transaction(store,"readwrite"); tx.objectStore(store).delete(id); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
+      r.onsuccess=()=>{ const d=r.result; d.onclose=()=>{ if(this.db===d) this.db=null; }; d.onversionchange=()=>{ d.close(); if(this.db===d) this.db=null; }; this.db=d; res(d); };
+      r.onerror=()=>rej(r.error); r.onblocked=()=>rej(new Error("database blocked")); }).finally(()=>{ this.opening=null; });
+    return this.opening; },
+  async open(){ try{ await this.connect(); this.ok=true; }catch(e){ console.warn("IndexedDB unavailable, using memory",e); this.ok=false; } },
+  async run(store,mode,fn){ // fn(objectStore) -> request|null; resolves with request result (or undefined for writes)
+    for(let attempt=0;;attempt++){
+      try{ const d=await this.connect();
+        return await new Promise((res,rej)=>{ let tx; try{ tx=d.transaction(store,mode); }catch(e){ rej(e); return; }
+          const req=fn(tx.objectStore(store)); tx.oncomplete=()=>res(req?req.result:undefined); tx.onerror=()=>rej(tx.error); tx.onabort=()=>rej(tx.error||new Error("transaction aborted")); }); }
+      catch(e){ const closing=/clos|InvalidState|abort/i.test((e&&(e.name+" "+e.message))||"");
+        if(attempt<2&&closing){ try{ this.db&&this.db.close(); }catch(_){} this.db=null; continue; } throw e; } } },
+  async all(store){ if(!this.ok) return [...this.mem[store].values()]; return this.run(store,"readonly",s=>s.getAll()); },
+  async put(store,obj){ if(!this.ok){ this.mem[store].set(obj.id,structuredClone(obj)); return; } return this.run(store,"readwrite",s=>{ s.put(obj); return null; }); },
+  async del(store,id){ if(!this.ok){ this.mem[store].delete(id); return; } return this.run(store,"readwrite",s=>{ s.delete(id); return null; }); }
 };
 
 /* ================= MusicXML file reading ================= */
