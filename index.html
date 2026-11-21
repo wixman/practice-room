@@ -191,6 +191,8 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
 .paper{background:var(--paper);border:1px solid var(--paper-line);border-radius:14px;box-shadow:var(--shadow);min-height:200px;padding:10px 0;max-width:1400px;margin:0 auto;position:relative;color:#111}
 .paper .msg{padding:40px 24px;text-align:center;color:#555}
 #osmd{width:100%;position:relative}
+#osmd .imp{position:absolute;pointer-events:none;z-index:1;background:color-mix(in srgb,var(--accent,#5262E6) 7%,transparent);border-top:2px dashed color-mix(in srgb,var(--accent,#5262E6) 45%,transparent)}
+#osmd .imp b{position:absolute;left:4px;top:-11px;font:600 10px/1 system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--accent,#5262E6);background:var(--paper,#fff);padding:1px 4px;border-radius:3px}
 #osmd .dim{position:absolute;pointer-events:none;background:var(--paper);opacity:.72;z-index:2;transition:opacity .2s}
 .countin{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;font:800 140px/1 var(--f-display);color:var(--accent);text-shadow:0 4px 30px rgba(0,0,0,.25)}
 /* options menu */
@@ -421,6 +423,8 @@ body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
             <button class="toggle" type="button" id="tgSwing" aria-pressed="false">Swing 8ths</button>
             <button class="toggle" type="button" id="tgBand" aria-pressed="false" title="Walking bass and jazz drums that follow the chords">Backing band</button>
             <div class="note bandnote" id="bandNote" hidden></div>
+            <div class="optrow" id="impRow"><span class="lbl" id="impLbl">Improv bars</span><span class="spacer"></span>
+              <button class="btn small" type="button" id="impBtn" title="In improv bars only the left hand is scored; the right hand is free">Mark bars as improv</button></div>
             <button class="toggle" type="button" id="tgKbd" aria-pressed="false" title="Show the 88-key strip under the score">Keyboard</button>
             <div class="optrow"><span class="lbl">Notation size</span><span class="spacer"></span>
               <button class="iconbtn" type="button" id="zoomOut" aria-label="Smaller notation">−</button>
@@ -541,7 +545,7 @@ function parseScore(xml){
   const parts=kids(root,"part");
   if(!parts.length) throw new Error("This score has no parts.");
   const rehearsals=[...new Set([...root.getElementsByTagName("rehearsal")].map(r=>r.textContent.trim()).filter(Boolean))];
-  const notes=[], measures=[], tempos=[]; let hasRepeats=false; const harm=[];
+  const notes=[], measures=[], tempos=[]; let hasRepeats=false; const harm=[]; const slashBars=new Set();
   const singleStaffParts=parts.length>=2;
   parts.forEach((part,pi)=>{
     let div=1, staves=1, beats=4, bt=4, mi=0, curKey=null; const tieOpen=new Map(); const graces=new Map(); // staff|voice -> [[grace chord], ...]
@@ -586,6 +590,7 @@ function parseScore(xml){
           if(!chord&&graces.has(vkey)){ const groups=graces.get(vkey); graces.delete(vkey); // grace notes lead into this note
             groups.forEach((grp,i)=>grp.forEach(x=>notes.push({q:q0+start/div,dq:0,midi:x.midi,hand:x.hand,m:mi,grace:{i,of:groups.length,slash:x.slash}}))); }
           const p=kid(el,"pitch"); if(!p||kid(el,"rest")) continue;
+          if((kidText(el,"notehead")||"").trim()==="slash"){ slashBars.add(mi); continue; } // slash notation: improvise here
           const midi=(parseInt(kidText(p,"octave"))+1)*12+STEP_PC[kidText(p,"step")]+Math.round(parseFloat(kidText(p,"alter")||"0"));
           const staff=parseInt(kidText(el,"staff")||"1");
           const hand= staves>=2 ? (staff===1?"R":"L") : (singleStaffParts ? (pi===0?"R":"L") : "R");
@@ -607,7 +612,7 @@ function parseScore(xml){
   const hands=new Set(notes.map(n=>n.hand)); const graceCount=notes.filter(n=>n.grace).length;
   const total= measures.length? measures[measures.length-1].q+measures[measures.length-1].len : 0;
   const chords=(harm.find(h=>h&&h.length)||[]).sort((a,b)=>a.q-b.q);
-  return {title,notes,measures,tempos,hasRepeats,hands:[...hands],totalQ:total,graceCount,rehearsals,chords};
+  return {title,notes,measures,tempos,hasRepeats,hands:[...hands],totalQ:total,graceCount,rehearsals,chords,slashBars:[...slashBars]};
 }
 const HARMONY_KIND={major:"",minor:"m",augmented:"aug",diminished:"dim",dominant:"7","major-seventh":"maj7","minor-seventh":"m7","diminished-seventh":"dim7","augmented-seventh":"7#5","half-diminished":"m7b5","major-minor":"mM7","major-sixth":"6","minor-sixth":"m6","dominant-ninth":"7","major-ninth":"maj7","minor-ninth":"m7","dominant-11th":"7","major-11th":"maj7","minor-11th":"m7","dominant-13th":"7","major-13th":"maj7","minor-13th":"m7","suspended-second":"sus","suspended-fourth":"sus",power:"",pedal:""};
 function harmonySym(el){ const r=kid(el,"root"); if(!r) return null; const step=kidText(r,"root-step"); if(!step) return null;
@@ -1162,9 +1167,12 @@ const View={ osmd:null, ok:false, pos:[], idx:-1, cache:new Map(), colored:[], z
     return this.boxes=boxes;
   },
   dimOutside(from,to){ // bars are 1-based
-    const host=$("#osmd"); host.querySelectorAll(".dim").forEach(d=>d.remove()); if(!this.ok||from==null) return;
-    const n=S.score?S.score.measures.length:0; if(from<=1&&to>=n) return;
+    const host=$("#osmd"); host.querySelectorAll(".dim,.imp").forEach(d=>d.remove()); if(!this.ok||from==null) return;
+    const n=S.score?S.score.measures.length:0; const imp=S.score?improvSet():new Set(); if(from<=1&&to>=n&&!imp.size) return;
     let boxes; try{ boxes=this.measureBoxes(); }catch(e){ boxes=null; } if(!boxes) return;
+    for(const [m,b] of boxes){ if(!imp.has(m)) continue; const d=document.createElement("div"); d.className="imp"; d.style.cssText=`left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px`;
+      const prevB=boxes.get(m-1); if(!imp.has(m-1)||!prevB||Math.abs(prevB.y-b.y)>2) d.innerHTML="<b>Improv</b>"; host.appendChild(d); }
+    if(from<=1&&to>=n) return;
     for(const [m,b] of boxes){ if(m+1>=from&&m+1<=to) continue; const d=document.createElement("div"); d.className="dim"; d.style.cssText=`left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px`; host.appendChild(d); }
   },
   rerender(){ if(!this.ok) return; const keep=this.idx; this.osmd.Zoom=this.zoom; this.osmd.render(); this.cache.clear(); this.colored=[]; this.osmd.cursor.reset(); this.idx=0; this.goIndex(Math.max(0,keep)); },
@@ -1440,6 +1448,7 @@ async function importBook(d){
     const p=old||{id:uid(),added:Date.now()+count,attempts:[],lastPlayed:null,plays:0,settings:{}};
     Object.assign(p,{title:it.title||sc.title||"Untitled",fileName:(it.title||"piece")+".musicxml",xml:it.xml,xmlRev:uid(),tags:[...new Set([...(p.tags||[]),...(d.tags||[]),...(it.tags||[])])]});
     if(it.kind) p.kind=it.kind==="song"?"song":"exercise";
+    if(Array.isArray(it.improv)) p.improv=normRanges(it.improv.filter(r=>Array.isArray(r)&&r.length===2).map(r=>[+r[0],+r[1]]));
     p.settings={...(p.settings||{})}; if(it.bpm) p.settings.bpm=it.bpm; if(it.swing!=null) p.settings.swing=!!it.swing;
     if(it.midi&&it.midi.b64){ p.midi=it.midi; p.midiRev=uid(); p.settings.useMidi=true; }
     if(!old){ S.pieces.push(p); c.pieceIds.push(p.id); }
@@ -1470,6 +1479,8 @@ function editPiece(p){
       <span class="note" style="font-size:12px">Exercises are learned in sections and tempos. Songs add Play mode: the goal is the whole piece, start to finish.</span></div>
     <label class="field">Tags (comma separated)<input type="text" id="edTags" value="${esc((p.tags||[]).join(", "))}" placeholder="e.g. bebop, left hand, 12 keys"></label>
     <div class="field"><span>Collections</span><div class="checks">${S.collections.length?S.collections.map(c=>`<label><input type="checkbox" value="${c.id}" ${c.pieceIds.includes(p.id)?"checked":""}> ${esc(c.name)}</label>`).join(""):'<span class="note" style="padding:8px">No collections yet. Add one in the sidebar.</span>'}</div></div>
+    <label class="field">Improv bars<input type="text" id="edImprov" value="${esc(fmtRanges(p.improv))}" placeholder="e.g. 17–24, 41–48" inputmode="text">
+      <span class="note" style="font-size:12px">Only the left hand is scored in these bars, so the right hand can improvise.${(()=>{ try{ const sl=parseScore(p.xml).slashBars; return sl.length?` Bars with slash notation are improv automatically (${fmtRanges(normRanges(sl.map(i=>[i+1,i+1])))}).`:""; }catch(e){ return ""; } })()}</span></label>
     <div class="row"><button class="toggle" type="button" id="edSwing" aria-pressed="${!!(p.settings&&p.settings.swing)}">Swing 8ths by default</button>
       <label class="field" style="grid-auto-flow:column;align-items:center">Written tempo ♩ =<input type="number" id="edBpm" min="20" max="320" value="${Math.round(p.settings&&p.settings.bpm||baseTempo(parseScore(p.xml)))}"></label></div>
     <div class="field"><span>Playback MIDI</span><div id="edMidiBox"></div><input type="file" id="edMidiIn" accept=".mid,.midi,audio/midi,audio/x-midi" hidden></div>
@@ -1493,6 +1504,7 @@ function editPiece(p){
     p.title=$("#edTitle").value.trim()||p.title;
     p.kind=$("#edKind [aria-pressed=true]").dataset.kind==="song"?"song":"exercise";
     p.tags=[...new Set($("#edTags").value.split(",").map(t=>t.trim()).filter(Boolean))];
+    p.improv=parseBarRanges($("#edImprov").value);
     p.settings=p.settings||{}; p.settings.swing=$("#edSwing").getAttribute("aria-pressed")==="true"; const bpm=parseFloat($("#edBpm").value); if(bpm>0) p.settings.bpm=bpm;
     const chosen=new Set($$("#sheet .checks input:checked").map(i=>i.value));
     for(const c of S.collections){ const has=c.pieceIds.includes(p.id); if(chosen.has(c.id)&&!has){ c.pieceIds.push(p.id); await saveCol(c); } if(!chosen.has(c.id)&&has){ c.pieceIds=c.pieceIds.filter(x=>x!==p.id); await saveCol(c); } }
@@ -1575,7 +1587,17 @@ $("#startBtn").onclick=()=>{ if(S.running) { stopRun(); return; } S.mode==="play
 $("#learnBar").addEventListener("click",learnClick);
 $("#tgMine").onclick=()=>{ S.mine=!S.mine; syncControls(); };
 /* Fade the bars you're not working on */
-function applyDim(){ if(!View.ok||!S.score) return; View.dimOutside(S.from,S.to); }
+function applyDim(){ try{ syncImprov(); }catch(e){} if(!View.ok||!S.score) return; View.dimOutside(S.from,S.to); }
+function syncImprov(){ if(!S.score||!$("#impBtn")) return; const rs=improvRanges(), mine=(S.cur&&S.cur.improv)||[];
+  const all=S.from===1&&S.to===S.score.measures.length; const sel=all?null:[S.from,S.to];
+  const covered=sel&&mine.some(([a,b])=>a<=sel[0]&&b>=sel[1]);
+  $("#impLbl").textContent=rs.length?"Improv: bars "+fmtRanges(rs):"Improv bars";
+  $("#impBtn").textContent= !sel ? (mine.length?"Clear improv bars":"Pick bars, then mark") : covered ? `Unmark bars ${sel[0]}–${sel[1]}` : `Mark bars ${sel[0]}–${sel[1]} as improv`;
+  $("#impBtn").disabled= !sel&&!mine.length; }
+$("#impBtn").onclick=async()=>{ const p=S.cur; if(!p||!S.score) return; const n=S.score.measures.length; const all=S.from===1&&S.to===n; let rs=[...(p.improv||[])];
+  if(all) rs=[]; else if(rs.some(([a,b])=>a<=S.from&&b>=S.to)){ const out=[]; for(const [a,b] of rs){ if(b<S.from||a>S.to){ out.push([a,b]); continue; } if(a<S.from) out.push([a,S.from-1]); if(b>S.to) out.push([S.to+1,b]); } rs=out; }
+  else rs.push([S.from,S.to]);
+  p.improv=normRanges(rs); await savePiece(p); syncImprov(); applyDim(); toast(p.improv.length?"Improv bars: "+fmtRanges(p.improv)+". Only the left hand is scored there.":"Improv bars cleared"); };
 /* Options menu */
 function setOpts(open){ $("#optsPanel").hidden=!open; $("#optBtn").setAttribute("aria-expanded",open); }
 $("#optBtn").onclick=e=>{ e.stopPropagation(); setOpts($("#optsPanel").hidden); };
@@ -1601,7 +1623,15 @@ document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&$("#scrim").hidden
 $("#tgKbd").onclick=()=>{ S.settings.showKbd=!S.settings.showKbd; syncControls(); saveSettings(); };
 
 function range(){ const ms=S.score.measures; const a=ms[S.from-1], b=ms[S.to-1]; return {qs:a.q,qe:b.q+b.len,full:S.from===1&&S.to===ms.length}; }
-function activeNotes(qs,qe){ return S.score.notes.filter(n=>n.q>=qs-1e-6&&n.q<qe-1e-6&&(S.hands==="B"||n.hand===S.hands)); }
+/* improv bars: the right hand plays what it likes; only the left hand is scored there */
+function parseBarRanges(txt,n){ const out=[]; for(const part of String(txt||"").split(/[,;]+/)){ const m=part.trim().match(/^(\d+)\s*(?:[-–—]|to)?\s*(\d+)?$/i); if(!m) continue; let a=+m[1], b=m[2]?+m[2]:a; if(b<a) [a,b]=[b,a]; if(n){ a=clamp(a,1,n); b=clamp(b,1,n); } out.push([a,b]); } return normRanges(out); }
+function normRanges(rs){ const s=[...rs].sort((x,y)=>x[0]-y[0]), out=[]; for(const r of s){ const l=out[out.length-1]; if(l&&r[0]<=l[1]+1) l[1]=Math.max(l[1],r[1]); else out.push([r[0],r[1]]); } return out; }
+function fmtRanges(rs){ return (rs||[]).map(([a,b])=>a===b?String(a):a+"–"+b).join(", "); }
+function improvRanges(){ const rs=[...((S.cur&&S.cur.improv)||[])]; for(const i of (S.score&&S.score.slashBars)||[]) rs.push([i+1,i+1]); return normRanges(rs); }
+function improvSet(){ const s=new Set(); for(const [a,b] of improvRanges()) for(let i=a;i<=b;i++) s.add(i-1); return s; }
+/* in an improv bar, a key above the left hand's highest note there is taken as right-hand improvising */
+function improvLimits(){ const imp=improvSet(), lim=new Map(); for(const m of imp) lim.set(m,-1); for(const n of S.score.notes) if(n.hand==="L"&&lim.has(n.m)) lim.set(n.m,Math.max(lim.get(n.m),n.midi)); return lim; }
+function activeNotes(qs,qe){ const imp=improvSet(); return S.score.notes.filter(n=>n.q>=qs-1e-6&&n.q<qe-1e-6&&(S.hands==="B"||n.hand===S.hands)&&!(n.hand==="R"&&imp.has(n.m))); }
 function otherNotes(qs,qe){ return S.hands==="B"?[]:S.score.notes.filter(n=>n.q>=qs-1e-6&&n.q<qe-1e-6&&n.hand!==S.hands); }
 /* what the app plays: the attached MIDI performance if there is one, otherwise the score's notes */
 function playbackNotes(qs,qe,which){ // which: "mine" | "other"
@@ -1633,7 +1663,7 @@ function startPractice(){
   const steps=[]; for(const n of notes){ const last=steps[steps.length-1]; if(last&&last.key===stepKey(n)) last.notes.push(n); else steps.push({key:stepKey(n),q:n.q,notes:[n]}); }
   const others=playbackNotes(qs,qe,"other"), clk=makeRunClock();
   View.clearColors(); liveStrip("practice");
-  let i=0, wrong=0, firstTry=0, stepWrong=false, pressed=new Set(); const t0=Date.now();
+  let i=0, wrong=0, firstTry=0, stepWrong=false, pressed=new Set(); const t0=Date.now(); const impLim=improvLimits();
   const show=()=>{ const st=steps[i]; View.goQ(st.q); $("#sStep").textContent=i; $("#sWrong").textContent=wrong; $("#sProg").style.width=(100*i/steps.length)+"%"; $("#sBar").textContent=barAtQ(st.q);
     const nxt=steps[i+1]; const graceStep=st.notes[0].grace;
     $("#sNeed").textContent="Next: "+st.notes.map(n=>noteName(n.midi)).join(" + ")+(graceStep?" (grace)"+(nxt?" → "+nxt.notes.map(n=>noteName(n.midi)).join(" + "):""):""); Kbd.expect(st.notes.map(n=>n.midi)); };
@@ -1642,6 +1672,7 @@ function startPractice(){
   const onMidi=e=>{ if(!e.on) return; const st=steps[i]; if(!st) return;
     if(st.notes.some(n=>n.midi===e.midi)){ pressed.add(e.midi); View.color(st.q,e.midi,"#14935A"); Kbd.pulse(e.midi,"ok"); }
     else if(optional.has(st.q+"|"+e.midi)){ Kbd.pulse(e.midi,"ok"); }
+    else if(impLim.has(st.notes[0].m)&&e.midi>impLim.get(st.notes[0].m)){ Kbd.pulse(e.midi,"ok"); }
     else { wrong++; stepWrong=true; Kbd.pulse(e.midi,"bad",400); $("#sWrong").textContent=wrong; const s=$("#strip"); s.classList.remove("flash"); void s.offsetWidth; s.classList.add("flash"); }
     if(st.notes.every(n=>pressed.has(n.midi))){
       if(!stepWrong) firstTry++;
@@ -1693,6 +1724,7 @@ function runTimed(kind,opts={}){
   const tolerated=kind==="play"&&optGr?notes.filter(n=>n.grace).map(n=>({midi:n.midi,t:noteTime(n,clk).t-base})):[];
   const win=clamp(.28*beatSec*(m0.bt===8?2:1),.09,.2);
   let hits=0,misses=0,extras=0,early=0,errs=[]; let mi=0;
+  const impWins=[]; if(kind==="play"){ const lim=improvLimits(); for(const [m,mx] of lim){ const M=S.score.measures[m]; if(!M||M.q+M.len<=qs+1e-6||M.q>=qe-1e-6) continue; impWins.push({a:rel(Math.max(M.q,qs))-win,b:rel(Math.min(M.q+M.len,qe))+win,mx}); } }
   const onMidi=e=>{ if(!e.on) return; const t=e.t-S.settings.latency/1000-perfStart;
     // grace notes: anything from a little before the crush up to the main note's window counts
     let best=null,bd=1e9; for(const x of exp){ if(x.hit||x.missed||x.n.midi!==e.midi) continue; const d=t-x.t; const lo=x.n.grace?-(win+.25):-win;
@@ -1700,6 +1732,7 @@ function runTimed(kind,opts={}){
     if(best){ best.hit=true; hits++; View.color(best.n.q,best.n.midi,"#14935A"); Kbd.pulse(e.midi,"ok"); $("#sHit").textContent=hits;
       if(!best.n.grace){ errs.push(t-best.t); $("#sTiming").style.left=(54+clamp((t-best.t)/win,-1,1)*54)+"px"; } }
     else if(tolerated.some(g=>g.midi===e.midi&&t>=g.t-win-.25&&t<=g.t+win)){ Kbd.pulse(e.midi,"ok"); }
+    else if(impWins.some(w=>t>=w.a&&t<=w.b&&e.midi>w.mx)){ Kbd.pulse(e.midi,"ok"); }
     else if(t>-win){ extras++; Kbd.pulse(e.midi,"bad",400); $("#sExtra").textContent=extras; } };
   if(kind==="play") MidiIn.listeners.add(onMidi);
   window.__lastRun={perfStart,latency:S.settings.latency,exp:exp.map(x=>({t:x.t,midi:x.n.midi}))};
