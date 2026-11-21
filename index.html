@@ -169,6 +169,7 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
 .pickrow button{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-weight:600;text-align:left}
 .pickrow button .sw{width:10px;height:10px;border-radius:50%;background:hsl(var(--hue,40) 75% 58%)}
 .pickrow button .count{margin-left:auto;color:var(--muted);font:500 12px var(--f-mono)}
+.kindtag{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--accent-soft,rgba(255,170,60,.18));color:var(--accent-text,inherit)}
 .bandnote{font-size:12px;padding:0 4px;max-width:260px}
 .sample{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--accent-text);margin-bottom:2px}
 
@@ -393,7 +394,7 @@ body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
         <div class="seg" role="group" aria-label="Mode">
           <button type="button" data-mode="practice" aria-pressed="true">Practice</button>
           <button type="button" data-mode="learn" aria-pressed="false">Learn</button>
-          <button type="button" data-mode="play" aria-pressed="false">Play</button>
+          <button type="button" data-mode="play" aria-pressed="false" id="modePlay">Play</button>
         </div>
         <div class="seg" role="group" aria-label="Hands">
           <button type="button" data-hands="L" aria-pressed="false">Left</button>
@@ -1264,8 +1265,11 @@ function renderLibrary(){
   const manual= col&&v.sort==="manual"&&!v.q&&!v.tag&&!S.selecting;
   $("#pieceList").innerHTML= arr.length? arr.map((p,i)=>{
       const b=bestRun(p), any=bestRun(p,{fullOnly:false});
-      const stars=b?starsFor(b.score):0, shown=b||any;
-      const best= b?`Best ${b.score}%`: any?`Best ${any.score}% <span title="Stars count for full runs, both hands, 100% tempo">(${any.full?"":"section, "}${any.hands==="B"?"":any.hands==="R"?"right hand, ":"left hand, "}${any.tempoPct}% tempo)</span>`:"No scored runs yet";
+      let stars=b?starsFor(b.score):0, shown=b||any;
+      let best= b?`Best ${b.score}%`: any?`Best ${any.score}% <span title="Stars count for full runs, both hands, 100% tempo">(${any.full?"":"section, "}${any.hands==="B"?"":any.hands==="R"?"right hand, ":"left hand, "}${any.tempoPct}% tempo)</span>`:"No scored runs yet";
+      if(!isSong(p)){ const info=sectionCount(p); // exercises: progress is medals earned in Learn
+        if(info&&info.total){ const e=p.learn?Object.entries(p.learn.cells||{}).filter(([k,c])=>c.earned&&info.keys.has(k)).length:0; const pct=Math.round(100*e/info.total);
+          shown=e?{score:pct}:null; stars=e===info.total?3:0; best=e?`${pct}% of medals earned`:"No medals yet"; } }
       const cols=S.collections.filter(c=>c.pieceIds.includes(p.id));
       const ring= S.selecting ? `<div class="badge"><span class="pick" aria-hidden="true">✓</span></div>` : manual
         ? `<div class="reorder"><button type="button" data-move="-1" aria-label="Move up" ${i===0?"disabled":""}>▲</button><button type="button" data-move="1" aria-label="Move down" ${i===arr.length-1?"disabled":""}>▼</button></div>`
@@ -1274,18 +1278,18 @@ function renderLibrary(){
         ${ring}
         <div style="min-width:0">
           ${p.sample?'<div class="sample">Sample piece</div>':""}
-          <button type="button" class="t" data-open="play" title="Open in Play mode">${esc(p.title)}</button>
+          <button type="button" class="t" data-open="${isSong(p)?"play":"learn"}" title="${isSong(p)?"Open in Play mode":"Open in Learn mode"}">${esc(p.title)}</button>
           <div class="meta"><span>${best}</span><span>${ago(p.lastPlayed)}</span></div>
           <div class="meta">${(()=>{ const info=sectionCount(p); if(info===null){ fillSectionCounts(); return ""; } if(!info.sections) return "";
               const n=info.sections, total=info.total, e=p.learn?Object.entries(p.learn.cells||{}).filter(([k,c])=>c.earned&&info.keys.has(k)).length:0;
               return (info.keyText?`<span class="lmeta keytag" title="Key">${esc(info.keyText)}</span>`:"")+`<span class="lmeta"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="1" y="3" width="3.2" height="10" rx="1" fill="currentColor"/><rect x="6.4" y="3" width="3.2" height="10" rx="1" fill="currentColor" opacity=".7"/><rect x="11.8" y="3" width="3.2" height="10" rx="1" fill="currentColor" opacity=".45"/></svg><span class="num">${n}</span> section${n===1?"":"s"}</span>`
                 +`<span class="lmeta">${medalSVG(e===total?"Gold":e?"Silver":"Bronze",e>0,13)}<span class="num">${e}/${total}</span> medals</span>`; })()}</div>
-          <div class="meta">${p.midi?`<span class="mtag" title="${esc(p.midi.name)}">${p.settings&&p.settings.useMidi===false?"MIDI off":"MIDI"}</span>`:""}${(p.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}${!col?cols.map(c=>`<span class="cdot" style="--hue:${hueOf(c.id)}">${esc(c.name)}</span>`).join(""):""}</div>
+          <div class="meta">${isSong(p)?'<span class="kindtag">Song</span>':""}${p.midi?`<span class="mtag" title="${esc(p.midi.name)}">${p.settings&&p.settings.useMidi===false?"MIDI off":"MIDI"}</span>`:""}${(p.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}${!col?cols.map(c=>`<span class="cdot" style="--hue:${hueOf(c.id)}">${esc(c.name)}</span>`).join(""):""}</div>
         </div>
         <div class="acts">
           <button class="btn small" type="button" data-open="practice">Practice</button>
-          <button class="btn small" type="button" data-open="learn">Learn</button>
-          <button class="btn small primary" type="button" data-open="play">Play</button>
+          <button class="btn small ${isSong(p)?"":"primary"}" type="button" data-open="learn">Learn</button>
+          ${isSong(p)?'<button class="btn small primary" type="button" data-open="play">Play</button>':""}
           <span class="grow"></span>
           <button class="btn small" type="button" data-edit aria-label="Edit ${esc(p.title)}">Edit</button>
         </div></article>`; }).join("")
@@ -1325,6 +1329,7 @@ function renderBulk(arr,col){
     <button class="btn small" type="button" data-bulk="top" ${dis} title="Move to the top of this collection">To top</button>
     <button class="btn small" type="button" data-bulk="bottom" ${dis} title="Move to the bottom of this collection">To bottom</button>
     <button class="btn small" type="button" data-bulk="remove" ${dis} title="Take out of this collection (keeps the pieces)">Remove</button>`:""}
+    <button class="btn small" type="button" data-bulk="kind" ${dis}>Song / exercise…</button>
     <button class="btn small danger" type="button" data-bulk="delete" ${dis}>Delete</button>
     <button class="btn small primary" type="button" data-bulk="done">Done</button>`;
 }
@@ -1357,6 +1362,9 @@ $("#bulkBar").onclick=async e=>{
     toast(`${act==="move"?"Moved":"Added"} ${ids.length} to ${target.name}`); S.sel.clear(); if(act==="move") S.selecting=false; renderLibrary(); });
   if(act==="top"||act==="bottom"){ const sel=col.pieceIds.filter(id=>S.sel.has(id)), rest=col.pieceIds.filter(id=>!S.sel.has(id)); col.pieceIds= act==="top"?[...sel,...rest]:[...rest,...sel]; S.view.sort="manual"; await saveCol(col); return renderLibrary(); }
   if(act==="remove"){ col.pieceIds=col.pieceIds.filter(id=>!S.sel.has(id)); await saveCol(col); toast(`Removed ${ids.length} from ${col.name}`); S.sel.clear(); return renderLibrary(); }
+  if(act==="kind"){ sheet(`<h2>Mark ${ids.length} piece${ids.length===1?"":"s"} as…</h2><p class="note">Exercises are learned in sections and tempos. Songs also get Play mode, where the goal is the whole piece start to finish.</p><div class="row end"><button class="btn" data-close>Cancel</button><button class="btn" id="bkEx">Exercises</button><button class="btn primary" id="bkSong">Songs</button></div>`);
+    const setK=async k=>{ for(const p of chosen){ p.kind=k; await savePiece(p); } closeSheet(); toast(`Marked ${ids.length} as ${k==="song"?"songs":"exercises"}`); renderLibrary(); };
+    $("#bkEx").onclick=()=>setK("exercise"); $("#bkSong").onclick=()=>setK("song"); return; }
   if(act==="delete"){ sheet(`<h2>Delete ${ids.length} piece${ids.length===1?"":"s"}?</h2><p>This removes ${ids.length===1?"it":"them"} and ${ids.length===1?"its":"their"} score history and medals from your library on every synced device.${col?" To only take them out of this collection, use “Remove from collection” instead.":""}</p><div class="row end"><button class="btn" data-close>Cancel</button><button class="btn danger" id="bdOk">Delete ${ids.length}</button></div>`);
     $("#bdOk").onclick=async()=>{ await deletePieces(chosen); closeSheet(); S.sel.clear(); toast(`Deleted ${ids.length} piece${ids.length===1?"":"s"}`); renderLibrary(); }; }
 };
@@ -1421,6 +1429,7 @@ async function importBook(d){
     const old=c.pieceIds.map(id=>S.pieces.find(p=>p.id===id)).find(p=>p&&p.title===it.title); // re-importing a book updates it in place
     const p=old||{id:uid(),added:Date.now()+count,attempts:[],lastPlayed:null,plays:0,settings:{}};
     Object.assign(p,{title:it.title||sc.title||"Untitled",fileName:(it.title||"piece")+".musicxml",xml:it.xml,xmlRev:uid(),tags:[...new Set([...(p.tags||[]),...(d.tags||[]),...(it.tags||[])])]});
+    if(it.kind) p.kind=it.kind==="song"?"song":"exercise";
     p.settings={...(p.settings||{})}; if(it.bpm) p.settings.bpm=it.bpm; if(it.swing!=null) p.settings.swing=!!it.swing;
     if(it.midi&&it.midi.b64){ p.midi=it.midi; p.midiRev=uid(); p.settings.useMidi=true; }
     if(!old){ S.pieces.push(p); c.pieceIds.push(p.id); }
@@ -1446,6 +1455,9 @@ function editPiece(p){
   const hist=(p.attempts||[]).slice(-12).reverse();
   sheet(`<h2>Edit piece</h2>
     <label class="field">Title<input type="text" id="edTitle" value="${esc(p.title)}"></label>
+    <div class="field"><span>Type</span><div class="seg" id="edKind" role="group" aria-label="Type">
+      <button type="button" data-kind="exercise" aria-pressed="${!isSong(p)}">Exercise</button><button type="button" data-kind="song" aria-pressed="${isSong(p)}">Song</button></div>
+      <span class="note" style="font-size:12px">Exercises are learned in sections and tempos. Songs add Play mode: the goal is the whole piece, start to finish.</span></div>
     <label class="field">Tags (comma separated)<input type="text" id="edTags" value="${esc((p.tags||[]).join(", "))}" placeholder="e.g. bebop, left hand, 12 keys"></label>
     <div class="field"><span>Collections</span><div class="checks">${S.collections.length?S.collections.map(c=>`<label><input type="checkbox" value="${c.id}" ${c.pieceIds.includes(p.id)?"checked":""}> ${esc(c.name)}</label>`).join(""):'<span class="note" style="padding:8px">No collections yet. Add one in the sidebar.</span>'}</div></div>
     <div class="row"><button class="toggle" type="button" id="edSwing" aria-pressed="${!!(p.settings&&p.settings.swing)}">Swing 8ths by default</button>
@@ -1453,6 +1465,7 @@ function editPiece(p){
     <div class="field"><span>Playback MIDI</span><div id="edMidiBox"></div><input type="file" id="edMidiIn" accept=".mid,.midi,audio/midi,audio/x-midi" hidden></div>
     ${hist.length?`<div class="field"><span>Recent runs</span><div style="overflow-x:auto"><table class="hist num"><tr><th>When</th><th>Mode</th><th>Hands</th><th>Tempo</th><th>Bars</th><th>Score</th></tr>${hist.map(a=>`<tr><td>${new Date(a.date).toLocaleDateString(undefined,{day:"numeric",month:"short"})} ${new Date(a.date).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})}</td><td>${a.mode==="play"?"Play":"Practice"}</td><td>${{B:"Both",R:"Right",L:"Left"}[a.hands]}</td><td>${a.tempoPct}%</td><td>${a.full?"All":a.from+"–"+a.to}</td><td>${a.score}%</td></tr>`).join("")}</table></div></div>`:""}
     <div class="row"><button class="btn danger" id="edDel" type="button">Delete piece</button><div class="spacer"></div><button class="btn" data-close type="button">Cancel</button><button class="btn primary" id="edSave" type="button">Save</button></div>`);
+  $("#edKind").onclick=e=>{ const b=e.target.closest("[data-kind]"); if(!b) return; $$("#edKind [data-kind]").forEach(x=>x.setAttribute("aria-pressed",x===b)); };
   $("#edSwing").onclick=e=>e.currentTarget.setAttribute("aria-pressed",e.currentTarget.getAttribute("aria-pressed")!=="true");
   const midiBox=()=>{ const box=$("#edMidiBox"); if(!box) return;
     if(!p.midi){ box.innerHTML=`<div class="note">Attach a MIDI file of this piece and the app plays it for “Hear my part” and “Hear other hand”, with its own feel, dynamics and pedalling, instead of reading the notes off the score.</div><div class="row"><label class="btn small" for="edMidiIn">Attach MIDI file</label></div>`; return; }
@@ -1468,6 +1481,7 @@ function editPiece(p){
     catch(err){ toast(err.message); } };
   $("#edSave").onclick=async()=>{
     p.title=$("#edTitle").value.trim()||p.title;
+    p.kind=$("#edKind [aria-pressed=true]").dataset.kind==="song"?"song":"exercise";
     p.tags=[...new Set($("#edTags").value.split(",").map(t=>t.trim()).filter(Boolean))];
     p.settings=p.settings||{}; p.settings.swing=$("#edSwing").getAttribute("aria-pressed")==="true"; const bpm=parseFloat($("#edBpm").value); if(bpm>0) p.settings.bpm=bpm;
     const chosen=new Set($$("#sheet .checks input:checked").map(i=>i.value));
@@ -1479,8 +1493,10 @@ function editPiece(p){
 
 /* ================= player ================= */
 function showView(name){ $("#viewLibrary").hidden=name!=="library"; $("#viewPlayer").hidden=name!=="player"; }
+function isSong(p){ return !!p&&p.kind==="song"; }
 async function openPiece(p,mode){
   stopRun();
+  if(mode==="play"&&!isSong(p)) mode="learn";
   S.cur=p; let sc; try{ sc=parseScore(p.xml); }catch(e){ toast(e.message); return; }
   S.score=sc; p.settings=p.settings||{}; S.midi=pieceMidi(p,sc);
   S.mode=mode||"practice"; S.hands=p.settings.hands||"B"; if(S.hands!=="B"&&!sc.hands.includes(S.hands)) S.hands="B";
@@ -1503,7 +1519,7 @@ function makeRunClock(){ // tempo override from piece settings replaces the writ
   return makeClock(src,S.tempoPct,S.swing,100);
 }
 function syncControls(){
-  $$("[data-mode]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===S.mode));
+  $$("[data-mode]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===S.mode)); $("#modePlay").hidden=!isSong(S.cur);
   $$("[data-hands]").forEach(b=>{ b.setAttribute("aria-pressed",b.dataset.hands===S.hands); b.disabled= b.dataset.hands!=="B" && !S.score.hands.includes(b.dataset.hands); });
   $("#tPct").textContent=S.tempoPct+"%"; $("#tBpm").textContent="♩ = "+Math.round(baseBpm()*S.tempoPct/100);
   $("#tgMetro").setAttribute("aria-pressed",S.metro); $("#tgOther").setAttribute("aria-pressed",S.other); $("#tgSwing").setAttribute("aria-pressed",S.swing); $("#tgBand").setAttribute("aria-pressed",!!S.band); bandNote();
@@ -1627,8 +1643,8 @@ function startPractice(){
     recordAttempt(att); const r=S.running; if(r){ r.finished=true; } stopRun();
     sheet(`<div class="result"><h2>Practice complete</h2><div class="score num">${score}%</div><p class="note">of steps played right first time</p>
       <div class="grid num"><div><b>${steps.length}</b><span>Steps</span></div><div><b>${firstTry}</b><span>First try</span></div><div><b>${wrong}</b><span>Wrong notes</span></div><div><b>${fmtSecs(att.secs)}</b><span>Time</span></div></div>
-      <div class="row" style="justify-content:center"><button class="btn" data-close>Close</button><button class="btn primary" id="again">Practise again</button><button class="btn" id="toPlay">Try Play mode</button></div></div>`);
-    $("#again").onclick=()=>{ closeSheet(); startPractice(); }; $("#toPlay").onclick=()=>{ closeSheet(); S.mode="play"; syncControls(); idleStrip(); };
+      <div class="row" style="justify-content:center"><button class="btn" data-close>Close</button><button class="btn primary" id="again">Practise again</button><button class="btn" id="toPlay">${isSong(S.cur)?"Try Play mode":"Go to Learn"}</button></div></div>`);
+    $("#again").onclick=()=>{ closeSheet(); startPractice(); }; $("#toPlay").onclick=()=>{ closeSheet(); setMode(isSong(S.cur)?"play":"learn"); };
     View.clearColors(); };
   MidiIn.listeners.add(onMidi);
   S.running={kind:"practice",stop(){ MidiIn.listeners.delete(onMidi); }};
