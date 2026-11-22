@@ -1249,11 +1249,11 @@ function listPieces(){
 }
 /* Learn section counts for the library cards: worked out in the background, one piece at a time, and cached */
 const secCache=new Map(); let secTimer=null; // value: {sections,total,keys:Set,keyText}
-const secKey=p=>p.id+"|"+(p.xmlRev||p.added||"")+"|"+(S.settings.learnBars||4);
+const secKey=p=>p.id+"|"+(p.xmlRev||p.added||"")+"|"+(S.settings.learnBars||4)+"|"+JSON.stringify(p.sections||null);
 function sectionCount(p){ return secCache.has(secKey(p))?secCache.get(secKey(p)):null; }
 function fillSectionCounts(){ if(secTimer) return;
   const step=()=>{ const p=S.pieces.find(x=>x.xml&&sectionCount(x)===null); if(!p){ secTimer=null; if(!$("#viewLibrary").hidden) renderLibrary(); return; }
-    try{ const sc=parseScore(p.xml), plan=makeLearnPlan(sc,S.settings.learnBars||4), cells=planCells(plan);
+    try{ const sc=parseScore(p.xml), plan=makeLearnPlan(sc,S.settings.learnBars||4,p.sections), cells=planCells(plan);
       secCache.set(secKey(p),{sections:plan.units.reduce((n,u)=>n+u.sections.length,0),total:cells.length,keys:new Set(cells.map(c=>c.key)),keyText:keyLabel(sc),units:plan.multi?plan.units.length:0}); }
     catch(e){ secCache.set(secKey(p),{sections:0,total:0,keys:new Set(),keyText:""}); }
     secTimer=setTimeout(step,0); };
@@ -1789,10 +1789,17 @@ function makeSections(score,L,from=1,to=score.measures.length){
   const end=sec=>ms[sec.to-1].q+ms[sec.to-1].len;
   return out.filter(sec=>score.notes.some(x=>x.q>=ms[sec.from-1].q-1e-6&&x.q<end(sec)-1e-6));
 }
-function makeLearnPlan(score,L){
+/* sections the player set by hand: [[from,to],...] in bar numbers; [] = whole piece only */
+function parseSections(txt,n){ const out=[]; for(const part of String(txt||"").split(/[,;]+/)){ const m=part.trim().match(/^(\d+)\s*(?:[-–—]|to)?\s*(\d+)?$/i); if(!m) continue;
+    let a=+m[1], b=m[2]?+m[2]:a; if(b<a) [a,b]=[b,a]; a=clamp(a,1,n); b=clamp(b,1,n); out.push([a,b]); }
+  out.sort((x,y)=>x[0]-y[0]); const res=[]; for(const r of out){ const l=res[res.length-1]; if(l&&r[0]<=l[1]) r[0]=l[1]+1; if(r[0]<=r[1]) res.push(r); } return res; }
+function makeLearnPlan(score,L,custom){
   const ms=score.measures, runs=[];
+  if(Array.isArray(custom)){ const n=ms.length; let secs=custom.filter(r=>r[0]>=1&&r[1]<=n&&r[0]<=r[1]).map(r=>({from:r[0],to:r[1]}));
+    if(!secs.length) secs=[{from:1,to:n}];
+    return {multi:false,custom:true,units:[{label:null,key:keyLabel(score),from:1,to:n,sections:secs,whole:secs.length>1?"all":null}]}; }
   ms.forEach((m,i)=>{ const k=keyName(m.key)||"?"; const r=runs[runs.length-1]; if(r&&r.k===k) r.to=i+1; else runs.push({k,from:i+1,to:i+1}); });
-  if(runs.length<3){ const sections=makeSections(score,L); return {multi:false,units:[{label:null,key:keyLabel(score),from:1,to:ms.length,sections,whole:sections.length>1?"all":null}]}; }
+  if(runs.length<3){ const sections=ms.length<=Math.max(8,L*2)?[{from:1,to:ms.length}]:makeSections(score,L); return {multi:false,units:[{label:null,key:keyLabel(score),from:1,to:ms.length,sections,whole:sections.length>1?"all":null}]}; }
   const units=runs.map(r=>{ const sections=makeSections(score,L,r.from,r.to);
     return {label:ms[r.from-1].label||`Key of ${r.k}`,key:r.k,from:r.from,to:r.to,sections,whole:sections.length>1?`u${r.from}-${r.to}`:null}; }).filter(u=>u.sections.length);
   return {multi:true,units};
@@ -1812,7 +1819,7 @@ function posLabel(pos,withUnit=true){ const unit=S.learnPlan.units[pos.u], s=uni
   const what= s ? `Section ${pos.i+1}` : S.learnPlan.multi ? "Whole key" : "Whole piece";
   return (withUnit&&S.learnPlan.multi?unit.key+" · ":"")+what; }
 function setupLearn(){
-  S.learnPlan=makeLearnPlan(S.score,S.settings.learnBars||4); S.learnCells=planCells(S.learnPlan);
+  S.learnPlan=makeLearnPlan(S.score,S.settings.learnBars||4,S.cur&&S.cur.sections); S.learnCells=planCells(S.learnPlan);
   const p=S.cur; p.learn=p.learn||{cells:{}};
   const {earned,total}=countCells(S.learnCells); if(p.learn.total!==total||p.learn.earned!==earned){ p.learn.total=total; p.learn.earned=earned; savePiece(p); }
   const t=nextLearnTarget()||{u:0,i:0,lv:0}; selectLearn(t.u,t.i,t.lv,false);
@@ -1837,7 +1844,7 @@ function renderLearn(){
   const all=countCells(S.learnCells), mine=countCells(S.learnCells.filter(c=>c.u===pos.u)), tgt=nextLearnTarget();
   const r=rangeOf(pos), bpm=Math.round(baseBpm()*S.tempoPct/100);
   const chip=i=>{ const s=unit.sections[i]; const keys=LEVELS.map((_,l)=>cellKeyAt(pos.u,i,l)); const done=keys.every(earnedAt);
-    const label= s?`${s.from}–${s.to}`: plan.multi?"Whole key":"Whole piece";
+    const label= s&&!(s.from===unit.from&&s.to===unit.to)?`${s.from}–${s.to}`: plan.multi?"Whole key":"Whole piece";
     return `<div class="lsec ${pos.i===i?"cur":""} ${done?"done":""}">
       <button type="button" class="ltitle" data-sec="${i}">${label}${done?' <span class="tick" aria-label="complete">✓</span>':""}</button>
       <div class="lmedals">${LEVELS.map((LL,l)=>{ const c=cellOf(keys[l])||{}; const here=pos.i===i&&pos.lv===l;
@@ -1851,16 +1858,25 @@ function renderLearn(){
   const open=learnOpen();
   const curMedals=LEVELS.map((LL,l)=>{ const c=cellOf(cellKeyAt(pos.u,pos.i,l))||{}; return `<button type="button" class="lm ${pos.lv===l?"here":""}" data-sec="${pos.i}" data-lv="${l}" title="${LL.name}: ${c.earned?"earned":c.best?`best ${c.best}%`:"not tried"}">${medalSVG(LL.medal,!!c.earned,20)}</button>`; }).join("");
   box.innerHTML=`<div class="lline">
-      <div class="lnow"><b>${plan.multi?esc(unit.key)+" · ":""}${unit.sections[pos.i]?`Section ${pos.i+1}/${unit.sections.length}`:plan.multi?"Whole key":"Whole piece"} · ${L.name}</b>
+      <div class="lnow"><b>${plan.multi?esc(unit.key)+" · ":""}${unit.sections[pos.i]&&unit.sections.length>1?`Section ${pos.i+1}/${unit.sections.length}`:plan.multi?"Whole key":"Whole piece"} · ${L.name}</b>
         <span class="note num">bars ${r.from}–${r.to} · ♩ = ${bpm}</span></div>
       <div class="lmedals cur">${curMedals}</div>
       <div class="lprog"><div class="progress"><i style="width:${100*all.earned/all.total}%"></i></div><span class="num"><b>${all.earned}</b>/${all.total}</span></div>
       <button type="button" class="btn small" id="lToggle" aria-expanded="${open}">${open?"Hide sections":"All sections"}<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" style="transform:rotate(${open?180:0}deg)"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-    </div>${open?`${picker}<div class="lsecs" id="lsecs">${chips}</div>`:""}`;
+    </div>${open?`${picker}<div class="lsecs" id="lsecs">${chips}</div>${plan.multi?"":`<div class="row" style="margin-top:4px"><button type="button" class="btn small" id="lEditSecs">Edit sections</button>${plan.custom?'<span class="note">Your own sections</span>':""}</div>`}`:""}`;
   $("#lToggle").onclick=()=>{ try{ localStorage.setItem("pr-learn-open",open?"0":"1"); }catch(e){} renderLearn(); };
+  if($("#lEditSecs")) $("#lEditSecs").onclick=editSections;
   const cur=box.querySelector(".lsec.cur"); if(cur) cur.scrollIntoView({block:"nearest",inline:"center"});
   const sel=$("#lUnit"); if(sel){ sel.onchange=()=>gotoUnit(+sel.value); $("#lPrev").onclick=()=>gotoUnit(pos.u-1); $("#lNextU").onclick=()=>gotoUnit(pos.u+1); sel.disabled=!!S.running; }
 }
+function editSections(){ const p=S.cur, n=S.score.measures.length, unit=S.learnPlan.units[0];
+  const cur=unit.sections.length===1&&unit.sections[0].from===1&&unit.sections[0].to===n?"":unit.sections.map(s=>s.from===s.to?`${s.from}`:`${s.from}–${s.to}`).join(", ");
+  sheet(`<h2>Sections</h2><p class="note">The piece has ${n} bar${n>1?"s":""}. List the bar ranges to learn one at a time, like <b>1–4, 5–8</b>. Leave it empty to learn the whole piece in one go.</p>
+    <label class="field">Sections<input type="text" id="secTxt" value="${esc(cur)}" placeholder="Whole piece"></label>
+    <div class="row end"><button class="btn" id="secAuto">Automatic</button><button class="btn" data-close>Cancel</button><button class="btn primary" id="secOk">Save</button></div>`);
+  const apply=async v=>{ if(v===undefined) delete p.sections; else p.sections=v; await savePiece(p); closeSheet(); setupLearn(); toast(v===undefined?"Sections back to automatic":v.length?`Sections: ${v.map(r=>r[0]===r[1]?r[0]:r[0]+"–"+r[1]).join(", ")}`:"Learning the whole piece in one go"); };
+  $("#secOk").onclick=()=>apply(parseSections($("#secTxt").value,n));
+  $("#secAuto").onclick=()=>apply(undefined); }
 function learnOpen(){ try{ return localStorage.getItem("pr-learn-open")==="1"; }catch(e){ return false; } }
 function gotoUnit(u){ if(S.running) return; u=clamp(u,0,S.learnPlan.units.length-1); const c=S.learnCells.find(x=>x.u===u&&!earnedAt(x.key))||{u,i:0,lv:0}; selectLearn(c.u,c.i,c.lv); }
 function learnClick(e){ if(S.running) return; const pos=S.learnPos; const m=e.target.closest("[data-lv]"); if(m){ selectLearn(pos.u,+m.dataset.sec,+m.dataset.lv); return; }
