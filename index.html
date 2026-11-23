@@ -204,6 +204,7 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
 #osmd .imp{position:absolute;pointer-events:none;z-index:1;background:color-mix(in srgb,var(--accent,#5262E6) 7%,transparent);border-top:2px dashed color-mix(in srgb,var(--accent,#5262E6) 45%,transparent)}
 #osmd .imp b{position:absolute;left:4px;top:-11px;font:600 10px/1 system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--accent,#5262E6);background:var(--paper,#fff);padding:1px 4px;border-radius:3px}
 #osmd .ghost{position:absolute;pointer-events:none;z-index:3;transform:translate(-50%,-50%);animation:ghostIn .18s ease-out}
+#osmd .ghost.out{opacity:0;transition:opacity .25s ease-in}
 #osmd .ghost i{display:block;width:100%;height:100%;border-radius:50%;background:#D93F36;transform:rotate(-20deg);box-shadow:0 0 0 2px rgba(217,63,54,.18)}
 #osmd .ghost b{position:absolute;right:100%;top:50%;transform:translateY(-55%);margin-right:2px;color:#D93F36;font:700 1em/1 "Times New Roman",serif}
 #osmd .ghost s{position:absolute;left:-35%;width:170%;height:2px;background:#D93F36;opacity:.8}
@@ -1292,8 +1293,19 @@ const View={ osmd:null, ok:false, pos:[], idx:-1, cache:new Map(), colored:[], z
       if(r.top<w.top+20||r.bottom>w.bottom-20) wrap.scrollTo({top:wrap.scrollTop+(r.top-w.top)-w.height*.25,behavior:"smooth"}); }catch(e){} },
   color(q,midi,color){ if(!this.ok) return; const i=this.indexForQ(q); if(Math.abs(this.pos[i].q-q)>1e-4) return;
     if(!this.cache.has(i)){ const keep=this.idx; this.goIndex(i); this.goIndex(keep); }
-    for(const e of this.cache.get(i)||[]) if(e.midi===midi){ try{ const g=e.g.getSVGGElement&&e.g.getSVGGElement(); if(!g) continue;
-      g.querySelectorAll("path,ellipse").forEach(p=>{ p.style.fill=color; p.style.stroke=color; }); this.colored.push(g); }catch(err){} } },
+    const ents=this.cache.get(i)||[];
+    for(const e of ents) if(e.midi===midi){ try{ const g=e.g.getSVGGElement&&e.g.getSVGGElement(); if(!g) continue;
+      // in a chord, colour just this note's head, so you can see which notes of the chord you got
+      const head=this.headFor(g,midi,ents); const el=head||g;
+      el.querySelectorAll("path,ellipse").forEach(p=>{ p.style.fill=color; p.style.stroke=color; }); if(head&&head.matches("path,ellipse")){ head.style.fill=color; head.style.stroke=color; }
+      this.colored.push(el); }catch(err){} } },
+  headFor(g,midi,ents){
+    const ms=[...new Set(ents.filter(e=>{ try{ return e.midi!=null&&e.g.getSVGGElement&&e.g.getSVGGElement()===g; }catch(err){ return false; } }).map(e=>e.midi))].sort((a,b)=>a-b);
+    if(ms.length<2) return null;
+    let hs=[...g.querySelectorAll(".vf-notehead")]; if(!hs.length) hs=[...g.querySelectorAll("ellipse")];
+    if(hs.length!==ms.length) return null;
+    const ys=hs.map(h=>{ const r=h.getBoundingClientRect(); return {h,y:r.top+r.bottom}; }).sort((a,b)=>b.y-a.y); // lowest on the page = lowest note
+    return ys[ms.indexOf(midi)].h; },
   /* a wrong key, drawn as a red note on the staff where it would sit (placed relative to a nearby written note on the same staff) */
   ghost(q,midi,hand){
     if(!this.ok||!S.score) return; const host=$("#osmd"); const H=host.getBoundingClientRect(); const keep=this.idx; this.noFollow=true;
@@ -1330,13 +1342,13 @@ const View={ osmd:null, ok:false, pos:[], idx:-1, cache:new Map(), colored:[], z
       const d=document.createElement("div"); d.className="ghost"; d.style.cssText=`left:${cx-H.left}px;top:${cy-H.top}px;width:${wid}px;height:${hgt}px;font-size:${hgt*1.5}px`;
       d.innerHTML=`<i></i>${acc?`<b>${acc}</b>`:""}<u>${noteName(midi)}</u>`;
       host.querySelectorAll(".ghost").forEach((g,k,all)=>{ if(all.length>=24&&k===0) g.remove(); });
-      host.appendChild(d); this.ghosts.push(d);
+      host.appendChild(d); this.ghosts.push(d); return d;
     }catch(err){ console.warn("ghost",err); }
     finally{ this.goIndex(keep); this.noFollow=false; }
   },
   ghosts:[],
   clearGhosts(){ $$("#osmd .ghost").forEach(d=>d.remove()); this.ghosts=[]; },
-  clearColors(){ this.clearGhosts(); for(const g of this.colored) g.querySelectorAll("path,ellipse").forEach(p=>{p.style.fill="";p.style.stroke="";}); this.colored=[]; }
+  clearColors(){ this.clearGhosts(); for(const g of this.colored){ g.querySelectorAll("path,ellipse").forEach(p=>{p.style.fill="";p.style.stroke="";}); if(g.style){ g.style.fill=""; g.style.stroke=""; } } this.colored=[]; }
 };
 
 window.addEventListener("resize",()=>{ View.clearGhosts(); View.cache.clear(); View.colored=[]; View.boxes=null; clearTimeout(window.__dimT); window.__dimT=setTimeout(applyDim,400); });
@@ -1823,7 +1835,7 @@ function startPractice(){
     if(st.notes.some(n=>n.midi===e.midi)){ pressed.add(e.midi); View.color(st.q,e.midi,"#14935A"); Kbd.pulse(e.midi,"ok"); }
     else if(optional.has(st.q+"|"+e.midi)){ Kbd.pulse(e.midi,"ok"); }
     else if(impLim.has(st.notes[0].m)&&e.midi>impLim.get(st.notes[0].m)){ Kbd.pulse(e.midi,"ok"); }
-    else { wrong++; stepWrong=true; Kbd.pulse(e.midi,"bad",400); View.ghost(st.q,e.midi,st.notes.reduce((b,n)=>Math.abs(n.midi-e.midi)<Math.abs(b.midi-e.midi)?n:b).hand); $("#sWrong").textContent=wrong; const s=$("#strip"); s.classList.remove("flash"); void s.offsetWidth; s.classList.add("flash"); }
+    else { wrong++; stepWrong=true; Kbd.pulse(e.midi,"bad",400); { const gd=View.ghost(st.q,e.midi,st.notes.reduce((b,n)=>Math.abs(n.midi-e.midi)<Math.abs(b.midi-e.midi)?n:b).hand); if(gd) setTimeout(()=>{ gd.classList.add("out"); setTimeout(()=>gd.remove(),260); },650); } $("#sWrong").textContent=wrong; const s=$("#strip"); s.classList.remove("flash"); void s.offsetWidth; s.classList.add("flash"); }
     if(st.notes.every(n=>pressed.has(n.midi))){
       if(!stepWrong) firstTry++;
       const nextQ= i+1<steps.length?steps[i+1].q:qe; playOthers(st.q,nextQ);
