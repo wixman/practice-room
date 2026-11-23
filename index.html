@@ -1833,12 +1833,17 @@ function startPractice(){
     $("#sNeed").textContent="Next: "+st.notes.map(n=>noteName(n.midi)).join(" + ")+(graceStep?" (grace)"+(nxt?" → "+nxt.notes.map(n=>noteName(n.midi)).join(" + "):""):""); Kbd.expect(st.notes.map(n=>n.midi)); };
   const playOthers=(fromQ,toQ)=>{ if(!S.other||!others.length||!Audio.ctx) return; const now=Audio.ctx.currentTime+.02, base=clk.sec(fromQ);
     for(const o of others) if(o.q>=fromQ-1e-6&&o.q<toQ-1e-6){ const nt=noteTime(o,clk); const at=Math.max(0,nt.t-base); Audio.tone(o.midi,now+at,nt.d,o.vel??.72); Kbd.auto(o.midi,at+.02,nt.d); } };
-  const onMidi=e=>{ if(!e.on) return; const st=steps[i]; if(!st) return;
-    if(st.notes.some(n=>n.midi===e.midi)){ pressed.add(e.midi); View.color(st.q,e.midi,"#14935A"); Kbd.pulse(e.midi,"ok"); }
+  // a chord counts only when all its notes are held down together: a struck note shows pale green while held,
+  // goes back to black if you let go before the rest of the chord is down, and everything turns green when it's complete
+  const HELD="#8CCFAE", OK="#14935A";
+  const onMidi=e=>{ const st=steps[i]; if(!st) return;
+    if(!e.on){ if(pressed.has(e.midi)&&st.notes.length>1){ pressed.delete(e.midi); View.color(st.q,e.midi,""); } return; }
+    if(st.notes.some(n=>n.midi===e.midi)){ pressed.add(e.midi); View.color(st.q,e.midi,st.notes.length>1?HELD:OK); Kbd.pulse(e.midi,"ok"); }
     else if(optional.has(st.q+"|"+e.midi)){ Kbd.pulse(e.midi,"ok"); }
     else if(impLim.has(st.notes[0].m)&&e.midi>impLim.get(st.notes[0].m)){ Kbd.pulse(e.midi,"ok"); }
     else { wrong++; stepWrong=true; Kbd.pulse(e.midi,"bad",400); { const gd=View.ghost(st.q,e.midi,st.notes.reduce((b,n)=>Math.abs(n.midi-e.midi)<Math.abs(b.midi-e.midi)?n:b).hand); if(gd) setTimeout(()=>{ gd.classList.add("out"); setTimeout(()=>gd.remove(),260); },650); } $("#sWrong").textContent=wrong; const s=$("#strip"); s.classList.remove("flash"); void s.offsetWidth; s.classList.add("flash"); }
     if(st.notes.every(n=>pressed.has(n.midi))){
+      if(st.notes.length>1) for(const n of st.notes) View.color(st.q,n.midi,OK);
       if(!stepWrong) firstTry++;
       const nextQ= i+1<steps.length?steps[i+1].q:qe; playOthers(st.q,nextQ);
       i++; pressed=new Set(); stepWrong=false; View.clearGhosts();
