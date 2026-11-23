@@ -123,6 +123,9 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
 .piece .meta{display:flex;flex-wrap:wrap;gap:4px 10px;color:var(--muted);font-size:12.5px;margin-top:4px;align-items:center}
 .piece .acts{grid-column:1/-1;justify-content:flex-start;border-top:1px dashed var(--line);padding-top:12px}
 .piece.gold{border-color:color-mix(in srgb,var(--gold) 55%,var(--line))}
+.piece.done{opacity:.55;transition:opacity .2s}.piece.done:hover,.piece.done:focus-within{opacity:1}
+.piece .donemedal{display:grid;justify-items:center;gap:2px;font-size:11px;font-weight:600;color:var(--gold);letter-spacing:.02em}
+.result .keyhint{margin-top:10px;font-size:12px;color:var(--muted);text-align:center}.result .keyhint kbd{font:inherit;font-weight:700;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;margin:0 2px;color:var(--ink,inherit)}
 .tag{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--surface-2);font-size:12px;color:var(--ink)}
 .tag::before{content:"#";opacity:.45}
 .cdot{display:inline-flex;align-items:center;gap:5px}
@@ -1230,6 +1233,10 @@ function bestRun(p,{fullOnly=true}={}){ const a=(p.attempts||[]).filter(x=>x.mod
   return a.reduce((b,x)=>!b||x.score>b.score?x:b,null); }
 function hueOf(id){ let h=0; for(const c of String(id)) h=(h*31+c.charCodeAt(0))>>>0; return [38,205,265,150,330,15,180,290][h%8]; }
 function starsFor(score){ const t=S.settings.thresholds; return score>=t[2]?3:score>=t[1]?2:score>=t[0]?1:0; }
+function pieceDone(p){ // songs: a gold (3-star) full run; exercises: every Learn medal earned
+  if(isSong(p)){ const b=bestRun(p); return !!b&&starsFor(b.score)===3; }
+  const info=sectionCount(p); if(!info||!info.total) return false;
+  const e=p.learn?Object.entries(p.learn.cells||{}).filter(([k,c])=>c.earned&&info.keys.has(k)).length:0; return e===info.total; }
 function listPieces(){
   let arr=S.pieces.filter(p=>p.xml); const v=S.view; let col=null;
   if(v.list==="recent") arr=arr.filter(p=>p.lastPlayed).sort((a,b)=>b.lastPlayed-a.lastPlayed);
@@ -1281,6 +1288,7 @@ function renderLibrary(){
   const tags=[...new Set(S.pieces.flatMap(p=>p.tags||[]))].sort();
   $("#tagChips").innerHTML=tags.length?tags.map(t=>`<button class="chip" data-tag="${esc(t)}" aria-pressed="${v.tag===t}">${esc(t)}</button>`).join(""):"";
   const manual= col&&v.sort==="manual"&&!v.q&&!v.tag&&!S.selecting;
+  if(!S.selecting){ const d=arr.filter(pieceDone); if(d.length&&d.length<arr.length){ const ds=new Set(d); arr.splice(0,arr.length,...arr.filter(p=>!ds.has(p)),...d); } }
   $("#pieceList").innerHTML= arr.length? arr.map((p,i)=>{
       const b=bestRun(p), any=bestRun(p,{fullOnly:false});
       let stars=b?starsFor(b.score):0, shown=b||any;
@@ -1291,8 +1299,9 @@ function renderLibrary(){
       const cols=S.collections.filter(c=>c.pieceIds.includes(p.id));
       const ring= S.selecting ? `<div class="badge"><span class="pick" aria-hidden="true">✓</span></div>` : manual
         ? `<div class="reorder"><button type="button" data-move="-1" aria-label="Move up" ${i===0?"disabled":""}>▲</button><button type="button" data-move="1" aria-label="Move down" ${i===arr.length-1?"disabled":""}>▼</button></div>`
+        : pieceDone(p) ? `<div class="badge donemedal" title="Completed">${medalSVG("Gold",true,40)}<span>Done</span></div>`
         : `<div class="badge"><div class="ring ${stars===3?"gold":""} ${shown?"":"none"}" style="--p:${shown?shown.score:0}"><b>${shown?shown.score+"<small>%</small>":"—"}</b></div>${starsHTML(stars)}</div>`;
-      return `<article class="piece ${stars===3?"gold":""} ${S.sel.has(p.id)?"sel":""}" data-id="${p.id}" ${S.selecting?`role="checkbox" aria-checked="${S.sel.has(p.id)}" tabindex="0"`:""}>
+      return `<article class="piece ${stars===3?"gold":""} ${pieceDone(p)?"done":""} ${S.sel.has(p.id)?"sel":""}" data-id="${p.id}" ${S.selecting?`role="checkbox" aria-checked="${S.sel.has(p.id)}" tabindex="0"`:""}>
         ${ring}
         <div style="min-width:0">
           ${p.sample?'<div class="sample">Sample piece</div>':""}
@@ -1465,7 +1474,7 @@ $("#deleteColBtn").onclick=()=>{ const col=S.collections.find(c=>c.id===S.view.l
   $("#dcOk").onclick=async()=>{ S.collections=S.collections.filter(c=>c!==col); await DB.del("collections",col.id); await addTombstone("collection",col.id); closeSheet(); goList("home"); }; };
 
 /* sheets */
-function sheet(html){ $("#sheet").innerHTML=html; $("#scrim").hidden=false; const f=$("#sheet").querySelector("input,button"); if(f) f.focus(); }
+function sheet(html){ if(html.includes('class="result"')){ html=html.replace(/<\/div>\s*$/,`<div class="keyhint">On your keyboard: <kbd>C</kbd> again · <kbd>D</kbd> next · <kbd>E</kbd> close</div></div>`); S.resultAt=performance.now(); } $("#sheet").innerHTML=html; $("#scrim").hidden=false; const f=$("#sheet").querySelector("input,button"); if(f) f.focus(); }
 function closeSheet(){ $("#scrim").hidden=true; $("#sheet").innerHTML=""; }
 $("#scrim").addEventListener("click",e=>{ if(e.target.id==="scrim"||e.target.closest("[data-close]")) closeSheet(); });
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("#scrim").hidden) closeSheet(); });
@@ -2195,6 +2204,13 @@ function readSetupCode(v){ try{ v=v.trim(); if(!v.startsWith("PR1.")) return nul
     S.pieces.push(p); S.collections.push(c); await DB.put("pieces",p); await DB.put("collections",c); await DB.put("meta",{id:"seeded",at:Date.now()});
   }
   Kbd.build(); MidiIn.listeners.add(e=>Kbd.set(e.midi,"down",e.on));
+  MidiIn.listeners.add(e=>{ // piano-key shortcuts on a result card: C = again, D = next, E = close
+    if(!e.on||$("#scrim").hidden) return; const sh=$("#sheet"); if(!sh.querySelector(".result")) return;
+    if(performance.now()-(S.resultAt||0)<700) return; // ignore notes still ringing from the run
+    const pc=e.midi%12, q=s=>{ const b=sh.querySelector(s); return b&&!b.disabled?b:null; };
+    if(pc===0){ const b=q("#lAgain")||q("#again"); if(b) b.click(); }
+    else if(pc===2){ const b=q("#lNext")||q("#lSkip")||q("#goNext"); if(b) b.click(); else if(S.routine&&!$("#nextBtn").hidden){ closeSheet(); $("#nextBtn").click(); } }
+    else if(pc===4) closeSheet(); });
   $("#strip").addEventListener("animationend",e=>e.currentTarget.classList.remove("flash"));
   renderLibrary(); MidiIn.init(); Audio.loadPiano();
   Cloud.load(); renderCloudPill(); $("#cloudPill").onclick=openAccount;
