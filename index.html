@@ -578,11 +578,30 @@ function kidText(el,name){ const k=kid(el,name); return k?k.textContent.trim():n
    and the notes you're scored on run in performance order. Each written-out bar remembers its source bar (src),
    which Learn uses so a repeated passage isn't learned twice. */
 const unrollCache=new Map();
+/* Chord symbols written with an <offset> (all at the top of the bar, each shifted by an offset) are drawn bunched
+   at the start of the bar by the score renderer. Move each one to sit just before the note it belongs to. */
+function placeHarmonies(doc){
+  let moved=false;
+  for(const m of doc.getElementsByTagName("measure")){
+    const hs=kids(m,"harmony").filter(h=>{ const o=kid(h,"offset"); return o&&parseFloat(o.textContent)>0; }); if(!hs.length) continue;
+    for(const h of hs){
+      // where does the harmony sit now, and where should it be?
+      let t=0, last=0, at=null; const starts=[];
+      for(const el of [...m.children]){ const n=el.nodeName, d=parseFloat(kidText(el,"duration")||"0");
+        if(el===h) at=t;
+        if(n==="note"){ const isChord=!!kid(el,"chord"), grace=!!kid(el,"grace"); const st=isChord?last:t; if(!isChord&&!grace){ last=t; t+=d; } if(!grace&&!isChord) starts.push({el,st}); }
+        else if(n==="backup") t-=d; else if(n==="forward") t+=d; }
+      if(at===null) continue; const target=at+parseFloat(kid(h,"offset").textContent);
+      const hit=starts.find(x=>Math.abs(x.st-target)<1e-6); if(!hit) continue;
+      // graces sit before their main note: put the symbol before them
+      let before=hit.el; while(before.previousElementSibling&&before.previousElementSibling.nodeName==="note"&&kid(before.previousElementSibling,"grace")) before=before.previousElementSibling;
+      h.removeChild(kid(h,"offset")); m.insertBefore(h,before); moved=true; } }
+  return moved; }
 function unrolled(xml){
   if(unrollCache.has(xml)) return unrollCache.get(xml);
   let res={xml,order:null};
   try{ const doc=new DOMParser().parseFromString(xml,"application/xml");
-    if(!doc.getElementsByTagName("parsererror").length&&doc.documentElement.nodeName==="score-partwise"){ const order=unrollDoc(doc); if(order) res={xml:new XMLSerializer().serializeToString(doc),order}; } }
+    if(!doc.getElementsByTagName("parsererror").length&&doc.documentElement.nodeName==="score-partwise"){ const moved=placeHarmonies(doc); const order=unrollDoc(doc); if(order||moved) res={xml:new XMLSerializer().serializeToString(doc),order}; } }
   catch(e){ console.warn("unroll",e); }
   if(unrollCache.size>40) unrollCache.delete(unrollCache.keys().next().value);
   unrollCache.set(xml,res); return res;
