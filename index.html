@@ -317,6 +317,10 @@ body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
 .slist .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.slist .tr{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}.slist .tr i{display:block;height:100%;background:var(--cool);border-radius:3px}
 .slist b{font-size:12px}.slist .empty{color:var(--muted);display:block}
 @media (max-width:640px){.schart .ax{font-size:19px}.statsheet .tiles{grid-template-columns:1fr 1fr}.statsheet .scols{grid-template-columns:1fr}}
+.result .scorerow{display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap}
+.pbest{padding:6px 12px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);font-size:14px;font-weight:600;color:var(--muted)}
+.pbest b{color:var(--ink);font-size:16px}.pbest span{font-weight:500}
+.pbest.up{background:rgba(20,147,90,.1);border-color:rgba(20,147,90,.35);color:var(--good)}.pbest.up span{color:var(--muted)}
 .sheet{background:var(--surface);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);width:min(580px,100%);max-height:calc(100% - 32px);overflow:auto;padding:24px;display:flex;flex-direction:column;gap:18px}
 .sheet h2{font-size:26px;font-weight:800}
 .sheet .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
@@ -1947,8 +1951,13 @@ function startPractice(){
       if(i>=steps.length){ finishPractice(); return; } show(); } };
   const finishPractice=()=>{ const score=Math.round(100*firstTry/steps.length);
     const att={date:Date.now(),mode:"practice",score,hands:S.hands,tempoPct:S.tempoPct,full,from:S.from,to:S.to,wrong,secs:Math.round((Date.now()-t0)/1000)};
+    // your best earlier Practice run over the same bars with the same hands
+    const prevs=(S.cur.attempts||[]).filter(a=>a.mode==="practice"&&a.from===att.from&&a.to===att.to&&a.hands===att.hands);
+    const best=prevs.length?prevs.reduce((b,a)=>a.score>b.score||(a.score===b.score&&(a.secs||1e9)<(b.secs||1e9))?a:b):null;
+    const newBest=best&&(score>best.score||(score===best.score&&att.secs<(best.secs||1e9)));
     recordAttempt(att); const r=S.running; if(r){ r.finished=true; } stopRun();
-    sheet(`<div class="result"><h2>Practice complete</h2><div class="score num">${score}%</div><p class="note">of steps played right first time</p>
+    const bestHtml=!best?`<div class="pbest first">First run of these bars</div>`:newBest?`<div class="pbest up">New best! <span>was ${best.score}%${best.secs?` · ${fmtSecs(best.secs)}`:""}</span></div>`:`<div class="pbest">Your best <b class="num">${best.score}%</b>${best.secs?` <span>· ${fmtSecs(best.secs)}</span>`:""}</div>`;
+    sheet(`<div class="result"><h2>Practice complete</h2><div class="scorerow"><div class="score num">${score}%</div>${bestHtml}</div><p class="note">of steps played right first time</p>
       <div class="grid num"><div><b>${steps.length}</b><span>Steps</span></div><div><b>${firstTry}</b><span>First try</span></div><div><b>${wrong}</b><span>Wrong notes</span></div><div><b>${fmtSecs(att.secs)}</b><span>Time</span></div></div>
       <div class="row" style="justify-content:center"><button class="btn" data-close>Close</button><button class="btn primary" id="again">Practise again</button><button class="btn" id="toPlay">${isSong(S.cur)?"Try Play mode":"Go to Learn"}</button></div></div>`);
     $("#again").onclick=()=>{ closeSheet(); startPractice(); }; $("#toPlay").onclick=()=>{ closeSheet(); setMode(isSong(S.cur)?"play":"learn"); };
