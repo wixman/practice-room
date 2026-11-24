@@ -299,6 +299,24 @@ body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
 
 /* sheets */
 .scrim{position:fixed;inset:0;background:rgba(5,8,20,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:grid;place-items:center;padding:16px;z-index:50}
+.sheet.wide{width:min(860px,100%)}
+.statsheet{display:flex;flex-direction:column;gap:16px}
+.statsheet .shead{display:flex;justify-content:space-between;align-items:center}.statsheet h2{margin:0}
+.statsheet .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.statsheet .tile2{background:var(--surface-2);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.statsheet .tile2 span{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.statsheet .tile2 b{font-size:24px;line-height:1.2}.statsheet .tile2 em{font-style:normal;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.statsheet .seg{align-self:flex-start}
+.schart{width:100%;height:auto;display:block}
+.schart .grid{stroke:var(--line);stroke-width:1}.schart .ax{fill:var(--muted);font-size:11px}.schart .ax.now{fill:var(--ink);font-weight:700}
+.schart .bar rect:not(.hit){fill:var(--cool);opacity:.55}.schart .bar.cur rect:not(.hit){fill:var(--accent);opacity:1}
+.schart .hit{fill:transparent}.schart .bar:hover rect:not(.hit){opacity:1}
+.statsheet .scols{display:grid;grid-template-columns:1fr 1fr;gap:18px}.statsheet h3{font-size:13px;margin:0 0 8px;color:var(--muted)}
+.slist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+.slist li{display:grid;grid-template-columns:minmax(0,1.4fr) 1fr auto;gap:10px;align-items:center;font-size:13px}
+.slist .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.slist .tr{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}.slist .tr i{display:block;height:100%;background:var(--cool);border-radius:3px}
+.slist b{font-size:12px}.slist .empty{color:var(--muted);display:block}
+@media (max-width:640px){.schart .ax{font-size:19px}.statsheet .tiles{grid-template-columns:1fr 1fr}.statsheet .scols{grid-template-columns:1fr}}
 .sheet{background:var(--surface);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);width:min(580px,100%);max-height:calc(100% - 32px);overflow:auto;padding:24px;display:flex;flex-direction:column;gap:18px}
 .sheet h2{font-size:26px;font-weight:800}
 .sheet .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
@@ -1158,7 +1176,7 @@ const MidiIn={ access:null, listeners:new Set(), inputs:[],
   bind(){ this.inputs=[]; for(const inp of this.access.inputs.values()){ this.inputs.push(inp); inp.onmidimessage=ev=>this.msg(ev); } this.status(this.inputs.length?"on":"none"); },
   msg(ev){ const [st,d1,d2]=ev.data; const cmd=st&0xf0; const t=(ev.timeStamp||performance.now())/1000;
     if(cmd===0x90&&d2>0) this.emit({on:true,midi:d1,vel:d2,t}); else if(cmd===0x80||(cmd===0x90&&d2===0)) this.emit({on:false,midi:d1,t}); },
-  emit(e){ for(const f of this.listeners) f(e); },
+  emit(e){ if(e.on&&S.running) S.running.notes=(S.running.notes||0)+1; for(const f of this.listeners) f(e); },
   status(s){ const pill=$("#midiPill"), txt=$("#midiText"); pill.classList.toggle("on",s==="on"); pill.classList.toggle("off",s!=="on");
     txt.textContent= s==="on" ? (this.inputs.map(i=>i.name).join(", ")||"Keyboard connected") : s==="unsupported" ? "MIDI not available in this browser" : s==="denied" ? "MIDI access blocked" : "No keyboard"; }
 };
@@ -1421,7 +1439,9 @@ function renderLibrary(){
   const v=S.view;
   const smart=[["home","Home",S.collections.length],["all","All pieces",S.pieces.length],["recent","Recently played",S.pieces.filter(p=>p.lastPlayed).length],["nogold","Not gold yet",S.pieces.filter(p=>{const b=bestRun(p);return !b||starsFor(b.score)<3;}).length]];
   const ICON={home:"⌂",all:"♪",recent:"↺",nogold:"★"};
-  $("#smartList").innerHTML=smart.map(([id,n,c])=>`<button class="navitem" data-list="${id}" aria-current="${v.list===id}"><span class="ico" aria-hidden="true">${ICON[id]}</span><span>${n}</span><span class="count">${c}</span></button>`).join("");
+  const wkS=practiceEntries().filter(e=>e.d>=weekStart(Date.now())).reduce((t,e)=>t+e.s,0);
+  $("#smartList").innerHTML=smart.map(([id,n,c])=>`<button class="navitem" data-list="${id}" aria-current="${v.list===id}"><span class="ico" aria-hidden="true">${ICON[id]}</span><span>${n}</span><span class="count">${c}</span></button>`).join("")
+    +`<button class="navitem" data-stats="1" title="Practice time by day, week and month"><span class="ico" aria-hidden="true">▤</span><span>Practice stats</span><span class="count">${wkS?fmtDur(wkS)+" this wk":""}</span></button>`;
   const colLast=c=>{ let t=0; for(const id of c.pieceIds){ const p=S.pieces.find(p=>p.id===id); if(p&&p.lastPlayed>t) t=p.lastPlayed; } return t; };
   // most recently practised collection first; ones you haven't touched yet follow, newest first
   $("#colList").innerHTML=[...S.collections].sort((a,b)=>(colLast(b)-colLast(a))||((b.created||0)-(a.created||0))).map(c=>{ const pr=colProgress(c), pct=Math.round(pr.pct*100); return `<button class="navitem colbar${pr.n&&pr.done===pr.n?" full":""}" data-list="${c.id}" aria-current="${v.list===c.id}" style="--hue:${hueOf(c.id)};--pct:${pct}%" title="${esc(c.name)}: ${pct}% learned · ${pr.done} of ${pr.n} done"><span class="fill" aria-hidden="true"></span><span class="sw"></span><span class="nm">${esc(c.name)}</span><span class="count">${pr.n&&pr.done===pr.n?"✓ ":""}${pr.n}</span></button>`; }).join("")||`<div class="note" style="padding:0 10px">Group pieces into collections like “Warm-ups” or “Bebop Hanon”.</div>`;
@@ -1549,7 +1569,7 @@ $("#bulkBar").onclick=async e=>{
   if(act==="delete"){ sheet(`<h2>Delete ${ids.length} piece${ids.length===1?"":"s"}?</h2><p>This removes ${ids.length===1?"it":"them"} and ${ids.length===1?"its":"their"} score history and medals from your library on every synced device.${col?" To only take them out of this collection, use “Remove from collection” instead.":""}</p><div class="row end"><button class="btn" data-close>Cancel</button><button class="btn danger" id="bdOk">Delete ${ids.length}</button></div>`);
     $("#bdOk").onclick=async()=>{ await deletePieces(chosen); closeSheet(); S.sel.clear(); toast(`Deleted ${ids.length} piece${ids.length===1?"":"s"}`); renderLibrary(); }; }
 };
-$("#smartList").onclick=$("#colList").onclick=e=>{ const b=e.target.closest("[data-list]"); if(!b) return; goList(b.dataset.list); };
+$("#smartList").onclick=$("#colList").onclick=e=>{ if(e.target.closest("[data-stats]")){ openStats(); return; } const b=e.target.closest("[data-list]"); if(!b) return; goList(b.dataset.list); };
 function goList(id){ S.view.list=id; S.view.tag=null; S.view.q=""; $("#search").value=""; S.selecting=false; S.sel.clear(); const col=S.collections.find(c=>c.id===id); S.view.sort=col?"manual":(id==="recent"?"recent":"title"); renderLibrary(); $(".main").scrollTop=0; }
 function chooseNewCollection(){
   sheet(`<h2>New collection</h2><form id="ncForm"><label class="field">Name<input type="text" id="ncName" placeholder="e.g. Warm-ups, Bebop Hanon, Standards"></label><div class="row end"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Create</button></div></form>`);
@@ -1628,7 +1648,84 @@ $("#deleteColBtn").onclick=()=>{ const col=S.collections.find(c=>c.id===S.view.l
   $("#dcOk").onclick=async()=>{ S.collections=S.collections.filter(c=>c!==col); await DB.del("collections",col.id); await addTombstone("collection",col.id); closeSheet(); goList("home"); }; };
 
 /* sheets */
-function sheet(html){ if(html.includes('class="result"')){ html=html.replace(/<\/div>\s*$/,`<div class="keyhint">On your keyboard: <kbd>C</kbd> again · <kbd>D</kbd> next · <kbd>E</kbd> close</div></div>`); S.resultAt=performance.now(); } $("#sheet").innerHTML=html; $("#scrim").hidden=false; const f=$("#sheet").querySelector("input,button"); if(f) f.focus(); }
+/* ================= Practice stats =================
+   Every run you actually play in (Practice, Learn or Play, at least one note) is logged on its piece as a session:
+   {d: start time, s: seconds, m: mode}. Runs from before the log existed are estimated from their length. */
+function logSession(r){
+  try{ const p=S.cur; if(!p||!r||!r.startedAt||!(r.notes>0)) return;
+    const s=Math.min(1800,(Date.now()-r.startedAt)/1000); if(s<3) return;
+    if(!p.sessionsSince) p.sessionsSince=r.startedAt;
+    p.sessions=(p.sessions||[]).concat({d:r.startedAt,s:Math.round(s),m:S.mode}).slice(-4000); savePiece(p); }
+  catch(e){ console.warn("logSession",e); } }
+function practiceEntries(){
+  const out=[];
+  for(const p of S.pieces){
+    for(const x of p.sessions||[]) out.push({d:x.d,s:x.s,p,m:x.m});
+    const since=p.sessionsSince||Infinity, bpm=p.bpm||(p.settings&&p.settings.bpm)||90;
+    for(const a of p.attempts||[]){ if(a.date>=since) continue; // before logging started: estimate
+      let s=a.secs; if(!s){ const bars=a.from&&a.to?a.to-a.from+1:8; s=bars*4*60/(bpm*Math.max(.25,(a.tempoPct||100)/100))+4; }
+      out.push({d:a.date-s*1000,s:Math.min(900,Math.round(s)),p,m:a.mode,est:true}); } }
+  return out.sort((a,b)=>a.d-b.d); }
+const dayStart=t=>{ const d=new Date(t); d.setHours(0,0,0,0); return d.getTime(); };
+const weekStart=t=>{ const d=new Date(dayStart(t)); const wd=(d.getDay()+6)%7; d.setDate(d.getDate()-wd); return d.getTime(); }; // weeks start on Monday
+const monthStart=t=>{ const d=new Date(t); return new Date(d.getFullYear(),d.getMonth(),1).getTime(); };
+function fmtDur(s){ s=Math.round(s); if(s<60) return s?`${s}s`:"0m"; const m=Math.round(s/60); if(m<60) return `${m}m`; const h=Math.floor(m/60), r=m%60; return r?`${h}h ${r}m`:`${h}h`; }
+function buckets(entries,unit){
+  const now=Date.now(), out=[];
+  if(unit==="day"){ for(let i=29;i>=0;i--){ const d=new Date(dayStart(now)); d.setDate(d.getDate()-i); const a=d.getTime(), b=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1).getTime();
+      out.push({a,b,label:d.getDate()===1||i===29?d.toLocaleDateString(undefined,{day:"numeric",month:"short"}):String(d.getDate()),long:d.toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"})}); } }
+  else if(unit==="week"){ for(let i=15;i>=0;i--){ const d=new Date(weekStart(now)); d.setDate(d.getDate()-7*i); const a=d.getTime(), e=new Date(d); e.setDate(e.getDate()+7);
+      out.push({a,b:e.getTime(),label:d.toLocaleDateString(undefined,{day:"numeric",month:"short"}),long:"Week of "+d.toLocaleDateString(undefined,{day:"numeric",month:"long"})}); } }
+  else { const n=new Date(now); for(let i=11;i>=0;i--){ const d=new Date(n.getFullYear(),n.getMonth()-i,1), e=new Date(n.getFullYear(),n.getMonth()-i+1,1);
+      out.push({a:d.getTime(),b:e.getTime(),label:d.toLocaleDateString(undefined,{month:"short"})+(d.getMonth()===0||i===11?" "+String(d.getFullYear()).slice(2):""),long:d.toLocaleDateString(undefined,{month:"long",year:"numeric"})}); } }
+  for(const b of out){ b.s=0; b.est=0; }
+  for(const e of entries){ const b=out.find(b=>e.d>=b.a&&e.d<b.b); if(b){ b.s+=e.s; if(e.est) b.est+=e.s; } }
+  return out; }
+function statsChart(bs){
+  const W=720,H=220,pl=44,pr=8,pt=12,pb=28, max=Math.max(60,...bs.map(b=>b.s));
+  const mins=max/60; const step=[5,10,15,30,60,120,240,600].find(x=>mins/x<=4)||1200; const top=Math.ceil(mins/step)*step;
+  const iw=W-pl-pr, ih=H-pt-pb, bw=iw/bs.length, y=v=>pt+ih-(v/60)/top*ih;
+  let g=""; for(let v=0;v<=top;v+=step){ const yy=y(v*60); g+=`<line x1="${pl}" x2="${W-pr}" y1="${yy}" y2="${yy}" class="grid"/><text x="${pl-6}" y="${yy+4}" class="ax" text-anchor="end">${v>=60?(v/60)+"h":v+"m"}</text>`; }
+  const every=Math.ceil(bs.length/12);
+  bs.forEach((b,i)=>{ const x=pl+i*bw+bw*.16, w=bw*.68, h=pt+ih-y(b.s), cur=i===bs.length-1;
+    g+=`<g class="bar${cur?" cur":""}"><title>${b.long}: ${fmtDur(b.s)}${b.est?` (${fmtDur(b.est)} estimated)`:""}</title><rect x="${pl+i*bw}" y="${pt}" width="${bw}" height="${ih}" class="hit"/>`+
+       (b.s?`<rect x="${x}" y="${y(b.s)}" width="${w}" height="${Math.max(1.5,h)}" rx="${Math.min(4,w/3)}"/>`:"")+`</g>`;
+    if(i%every===0||cur) g+=`<text x="${pl+i*bw+bw/2}" y="${H-8}" class="ax${cur?" now":""}" text-anchor="middle">${b.label}</text>`; });
+  return `<svg viewBox="0 0 ${W} ${H}" class="schart" role="img" aria-label="Practice time chart">${g}</svg>`; }
+function streak(entries){ const days=new Set(entries.map(e=>dayStart(e.d))); let n=0; const d=new Date(dayStart(Date.now()));
+  if(!days.has(d.getTime())) d.setDate(d.getDate()-1); // today not played yet doesn't break the streak
+  while(days.has(d.getTime())){ n++; d.setDate(d.getDate()-1); } return n; }
+function openStats(unit){
+  unit=unit||S.statsUnit||"week"; S.statsUnit=unit;
+  const E=practiceEntries(), now=Date.now(), sum=(a,b)=>E.filter(e=>e.d>=a&&e.d<b).reduce((t,e)=>t+e.s,0);
+  const wk=sum(weekStart(now),Infinity), lastWk=sum(weekStart(now)-7*864e5,weekStart(now)), mo=sum(monthStart(now),Infinity), all=E.reduce((t,e)=>t+e.s,0);
+  const d30=dayStart(now)-29*864e5, days30=new Set(E.filter(e=>e.d>=d30).map(e=>dayStart(e.d))).size;
+  const bs=buckets(E,unit), from=bs[0].a;
+  const inRange=E.filter(e=>e.d>=from);
+  const byCol=new Map(), byPiece=new Map(), byMode={practice:0,learn:0,play:0};
+  for(const e of inRange){ byPiece.set(e.p,(byPiece.get(e.p)||0)+e.s); byMode[e.m]=(byMode[e.m]||0)+e.s;
+    const c=S.collections.find(c=>c.pieceIds.includes(e.p.id)); const k=c?c.name:"Not in a collection"; byCol.set(k,(byCol.get(k)||0)+e.s); }
+  const tot=inRange.reduce((t,e)=>t+e.s,0)||1;
+  const list=(m,n)=>{ const top=Math.max(1,...m.values()); return [...m].sort((a,b)=>b[1]-a[1]).slice(0,n).map(([k,s])=>`<li><span class="nm" title="${esc(typeof k==="string"?k:k.title)}">${esc(typeof k==="string"?k:k.title)}</span><span class="tr"><i style="width:${Math.round(100*s/top)}%"></i></span><b class="num">${fmtDur(s)}</b></li>`).join("")||`<li class="empty">Nothing yet in this range.</li>`; };
+  const rangeName={day:"last 30 days",week:"last 16 weeks",month:"last 12 months"}[unit];
+  const anyEst=inRange.some(e=>e.est);
+  sheet(`<div class="statsheet"><div class="shead"><h2>Practice stats</h2><button class="iconbtn" data-close aria-label="Close">✕</button></div>
+    <div class="tiles">
+      <div class="tile2"><span>This week</span><b class="num">${fmtDur(wk)}</b><em>${lastWk?`last week ${fmtDur(lastWk)}`:"&nbsp;"}</em></div>
+      <div class="tile2"><span>This month</span><b class="num">${fmtDur(mo)}</b><em>&nbsp;</em></div>
+      <div class="tile2"><span>Day streak</span><b class="num">${streak(E)}</b><em>${days30} of the last 30 days</em></div>
+      <div class="tile2"><span>All time</span><b class="num">${fmtDur(all)}</b><em>${days30?`about ${fmtDur(sum(d30,Infinity)/days30)} a practice day`:"&nbsp;"}</em></div>
+    </div>
+    <div class="seg" role="group" aria-label="Group by">${[["day","Days"],["week","Weeks"],["month","Months"]].map(([u,n])=>`<button type="button" data-unit="${u}" aria-pressed="${u===unit}">${n}</button>`).join("")}</div>
+    ${statsChart(bs)}
+    <div class="scols"><div><h3>Collections · ${rangeName}</h3><ul class="slist">${list(byCol,6)}</ul></div>
+      <div><h3>Pieces · ${rangeName}</h3><ul class="slist">${list(byPiece,6)}</ul></div></div>
+    <p class="note">By mode: Practice ${fmtDur(byMode.practice||0)} · Learn ${fmtDur(byMode.learn||0)} · Play ${fmtDur(byMode.play||0)}.
+    Time counts while a run is going and you're playing.${anyEst?" Runs from before tracking started are estimated from their length.":""}</p></div>`);
+  $("#sheet").classList.add("wide");
+  $$("#sheet [data-unit]").forEach(b=>b.onclick=()=>openStats(b.dataset.unit));
+}
+function sheet(html){ $("#sheet").classList.remove("wide");  if(html.includes('class="result"')){ html=html.replace(/<\/div>\s*$/,`<div class="keyhint">On your keyboard: <kbd>C</kbd> again · <kbd>D</kbd> next · <kbd>E</kbd> close</div></div>`); S.resultAt=performance.now(); } $("#sheet").innerHTML=html; $("#scrim").hidden=false; const f=$("#sheet").querySelector("input,button"); if(f) f.focus(); }
 function closeSheet(){ $("#scrim").hidden=true; $("#sheet").innerHTML=""; }
 $("#scrim").addEventListener("click",e=>{ if(e.target.id==="scrim"||e.target.closest("[data-close]")) closeSheet(); });
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("#scrim").hidden) closeSheet(); });
@@ -1814,7 +1911,7 @@ function liveStrip(kind){
 function barAtQ(q){ const ms=S.score.measures; let i=0; while(i+1<ms.length&&ms[i+1].q<=q+1e-6) i++; return i+1; }
 const PC=["C","C♯","D","E♭","E","F","F♯","G","A♭","A","B♭","B"]; const noteName=m=>PC[m%12]+(Math.floor(m/12)-1);
 
-function stopRun(){ Kbd.clear(); const r=S.running; if(!r) return; S.running=null; r.stop&&r.stop(); $("#countIn").hidden=true; releaseWake(); syncControls(); if(!r.finished) idleStrip(); }
+function stopRun(){ Kbd.clear(); const r=S.running; if(!r) return; S.running=null; logSession(r); r.stop&&r.stop(); $("#countIn").hidden=true; releaseWake(); syncControls(); if(!r.finished) idleStrip(); }
 let wake=null; async function holdWake(){ try{ wake=await navigator.wakeLock.request("screen"); }catch(e){} } function releaseWake(){ try{ wake&&wake.release(); }catch(e){} wake=null; }
 
 /* ---------- Practice (wait) mode ---------- */
@@ -1857,7 +1954,7 @@ function startPractice(){
     $("#again").onclick=()=>{ closeSheet(); startPractice(); }; $("#toPlay").onclick=()=>{ closeSheet(); setMode(isSong(S.cur)?"play":"learn"); };
     View.clearColors(); };
   MidiIn.listeners.add(onMidi);
-  S.running={kind:"practice",stop(){ MidiIn.listeners.delete(onMidi); }};
+  S.running={kind:"practice",startedAt:Date.now(),stop(){ MidiIn.listeners.delete(onMidi); }};
   holdWake(); syncControls(); show();
 }
 function fmtSecs(s){ return s>=60?`${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`:`${s}s`; }
@@ -1933,7 +2030,7 @@ function runTimed(kind,opts={}){
     $("#again").onclick=()=>{ closeSheet(); startPlay(); };
     const gn=$("#goNext"); if(gn) gn.onclick=()=>{ closeSheet(); $("#nextBtn").click(); };
   };
-  S.running={kind,stop(){ cancelAnimationFrame(raf); sched.stop(); MidiIn.listeners.delete(onMidi); if(!this.finished) Band.stopAll(); }};
+  S.running={kind,startedAt:Date.now(),stop(){ cancelAnimationFrame(raf); sched.stop(); MidiIn.listeners.delete(onMidi); if(!this.finished) Band.stopAll(); }};
   holdWake(); syncControls(); raf=requestAnimationFrame(tick);
 }
 function showCount(n,t){ const el=$("#countIn"); const d=Math.max(0,(t-Audio.ctx.currentTime)*1000); setTimeout(()=>{ if(!S.running) return; el.hidden=false; el.textContent=n; },d); }
