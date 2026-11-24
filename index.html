@@ -734,7 +734,7 @@ function parseScore(xml){
           const ties=kids(el,"tie").map(t=>t.getAttribute("type"));
           const key=hand+":"+midi;
           if(ties.includes("stop")&&tieOpen.has(key)){ const o=tieOpen.get(key); o.dq+=dur/div; if(!ties.includes("start")) tieOpen.delete(key); continue; }
-          const note={q:q0+start/div,dq:dur/div,midi,hand,m:mi};
+          const note={q:q0+start/div,dq:dur/div,midi,hand,m:mi}; if(el.getElementsByTagName("staccato").length||el.getElementsByTagName("staccatissimo").length) note.stac=true;
           notes.push(note); if(ties.includes("start")) tieOpen.set(key,note);
         }
       }
@@ -2019,11 +2019,17 @@ function runTimed(kind,opts={}){
   const win=clamp(.28*beatSec*(m0.bt===8?2:1),.09,.2);
   let hits=0,misses=0,extras=0,early=0,errs=[]; let mi=0;
   const impWins=[]; if(kind==="play"){ const lim=improvLimits(); for(const [m,mx] of lim){ const M=S.score.measures[m]; if(!M||M.q+M.len<=qs+1e-6||M.q>=qe-1e-6) continue; impWins.push({a:rel(Math.max(M.q,qs))-win,b:rel(Math.min(M.q+M.len,qe))+win,mx}); } }
-  const onMidi=e=>{ if(!e.on) return; const t=e.t-S.settings.latency/1000-perfStart;
+  // held length: a right note let go well before its written end (less than half of it) turns orange.
+  // Only quarter notes or longer, not staccato: short notes and loose swing release are left alone.
+  const holding=new Map(), CUT="#E8890C";
+  const onMidi=e=>{ const t=e.t-S.settings.latency/1000-perfStart;
+    if(!e.on){ const x=holding.get(e.midi); holding.delete(e.midi);
+      if(x&&!x.n.grace&&!x.n.stac&&x.n.dq>=1-1e-6){ const d=noteTime(x.n,clk).d; if(t-x.on<.5*d){ x.short=true; View.color(x.n.q,x.n.midi,CUT); } }
+      return; }
     // grace notes: anything from a little before the crush up to the main note's window counts
     let best=null,bd=1e9; for(const x of exp){ if(x.hit||x.missed||x.n.midi!==e.midi) continue; const d=t-x.t; const lo=x.n.grace?-(win+.25):-win;
       if(d>=lo&&d<=win&&Math.abs(d)<bd){best=x;bd=Math.abs(d);} if(x.t>t+win+.3) break; }
-    if(best){ best.hit=true; hits++; View.color(best.n.q,best.n.midi,"#14935A"); Kbd.pulse(e.midi,"ok"); $("#sHit").textContent=hits;
+    if(best){ best.hit=true; best.on=t; holding.set(e.midi,best); hits++; View.color(best.n.q,best.n.midi,"#14935A"); Kbd.pulse(e.midi,"ok"); $("#sHit").textContent=hits;
       if(!best.n.grace){ errs.push(t-best.t); $("#sTiming").style.left=(54+clamp((t-best.t)/win,-1,1)*54)+"px"; } }
     else if(tolerated.some(g=>g.midi===e.midi&&t>=g.t-win-.25&&t<=g.t+win)){ Kbd.pulse(e.midi,"ok"); }
     else if(impWins.some(w=>t>=w.a&&t<=w.b&&e.midi>w.mx)){ Kbd.pulse(e.midi,"ok"); }
