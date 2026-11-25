@@ -99,6 +99,15 @@ label.field input,label.field select{color:var(--ink);font-weight:400;font-size:
 .navlist{display:flex;flex-direction:column;gap:2px}
 .navitem{display:flex;align-items:center;gap:10px;min-height:42px;padding:0 12px;border-radius:12px;border:1px solid transparent;background:transparent;text-align:left;width:100%;font-weight:500}
 .navitem:hover{background:var(--surface)}
+.rotlist{display:flex;flex-direction:column;gap:2px}
+.navitem.rotitem .n{font:600 11px var(--f-mono);color:var(--muted);width:14px;text-align:right;flex:0 0 auto}
+.navitem.rotitem .when{margin-left:auto;font:500 11px var(--f-mono);color:var(--muted);white-space:nowrap}
+.navitem.rotitem.next{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 55%,transparent)}
+.navitem.rotitem.next .when{color:var(--accent-text);font-weight:700}
+.navitem.rotitem.next .n{color:var(--accent-text)}
+.rotempty{padding:0 12px;font-size:13px;line-height:1.45;color:var(--muted)}
+.navitem .rotmark{font-size:11px;color:var(--accent-text);flex:0 0 auto}
+.btn.rotbtn[aria-pressed="true"]{background:color-mix(in srgb,var(--accent) 18%,var(--surface));border-color:color-mix(in srgb,var(--accent) 55%,transparent);color:var(--accent-text)}
 .navitem[aria-current="true"]{background:var(--surface);border-color:var(--line);font-weight:700;box-shadow:var(--shadow)}
 .navitem .count{margin-left:auto;color:var(--muted);font:500 12px var(--f-mono)}
 .navitem .sw{width:10px;height:10px;border-radius:50%;background:hsl(var(--hue,40) 75% 58%);flex:0 0 auto;box-shadow:0 0 8px hsl(var(--hue,40) 75% 58% / .6)}
@@ -380,6 +389,7 @@ body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
   .navlist{flex-direction:row}
   .navitem{white-space:nowrap;width:auto}
   .newcol{display:none}
+  .rotempty{display:none}
   .list{grid-template-columns:1fr}
   .mainhead h2{font-size:30px}
   .vsep{display:none}
@@ -406,6 +416,10 @@ body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
   <section class="library" id="viewLibrary">
     <nav class="rail" aria-label="Collections">
       <div>
+        <h3>In Rotation</h3>
+        <div class="navlist rotlist" id="rotNav"></div>
+      </div>
+      <div>
         <h3>Library</h3>
         <div class="navlist" id="smartList"></div>
       </div>
@@ -427,6 +441,7 @@ body.focus #fsBtn{border-color:var(--cool);background:var(--cool-soft)}
         </div>
         <div class="spacer"></div>
         <div class="acts" id="colActs" hidden>
+          <button class="btn small rotbtn" id="rotBtn" type="button" aria-pressed="false">+ In Rotation</button>
           <button class="btn small" id="routineBtn" type="button">Start routine</button>
           <button class="btn small" id="renameColBtn" type="button">Rename</button>
           <button class="btn small danger" id="deleteColBtn" type="button">Delete</button>
@@ -1474,6 +1489,28 @@ function pieceProgress(p){ // 0..1: songs by stars on the best full run, exercis
   const e=p.learn?Object.entries(p.learn.cells||{}).filter(([k,c])=>c.earned&&info.keys.has(k)).length:0; return e/info.total; }
 function colProgress(c){ const ps=c.pieceIds.map(id=>S.pieces.find(p=>p.id===id)).filter(p=>p&&p.xml); if(!ps.length) return {pct:0,done:0,n:0};
   return {pct:ps.reduce((a,p)=>a+pieceProgress(p),0)/ps.length,done:ps.filter(pieceDone).length,n:ps.length}; }
+/* ================= In Rotation =================
+   Collections you're cycling through. Order is c.rot.at ascending: once you play any piece in a collection
+   it drops to the bottom, so the top is always the one that's waited longest. */
+const ROT_NAME="In Rotation";
+function rotCols(){ return S.collections.filter(c=>c.rot).sort((a,b)=>(a.rot.at-b.rot.at)||a.name.localeCompare(b.name)); }
+async function setRot(c,on){
+  if(on&&!c.rot){ const r=rotCols(); c.rot={at:(r.length?Math.min(...r.map(x=>x.rot.at)):Date.now())-1,added:Date.now()}; } // newly added: up next
+  else if(!on&&c.rot) delete c.rot;
+  await saveCol(c); }
+function rotBump(p){ // the collection you opened the piece from; if there isn't one, every rotation collection holding it
+  const t=Date.now(), ctx=S.routine&&S.routine.col&&S.routine.col.id;
+  let cs=S.collections.filter(c=>c.rot&&c.pieceIds.includes(p.id));
+  if(ctx&&cs.some(c=>c.id===ctx)) cs=cs.filter(c=>c.id===ctx);
+  for(const c of cs){ c.rot.at=t; c.rot.last=t; saveCol(c); } }
+function shortAgo(t){ const d=(Date.now()-t)/1000; if(d<3600) return Math.max(1,Math.round(d/60))+"m ago"; if(d<86400) return Math.round(d/3600)+"h ago"; if(d<86400*14) return Math.round(d/86400)+"d ago"; return Math.round(d/604800)+"w ago"; }
+function renderRotNav(){
+  const r=rotCols(), v=S.view;
+  $("#rotNav").innerHTML= r.length? r.map((c,i)=>{ const pr=colProgress(c), pct=Math.round(pr.pct*100);
+      return `<button class="navitem colbar rotitem${i===0?" next":""}" data-list="${c.id}" aria-current="${v.list===c.id}" style="--hue:${hueOf(c.id)};--pct:${pct}%" title="${esc(c.name)}: ${pct}% learned${c.rot.last?" · last practised "+shortAgo(c.rot.last):""}"><span class="fill" aria-hidden="true"></span><span class="n">${i+1}</span><span class="nm">${esc(c.name)}</span><span class="when">${i===0?"up next":c.rot.last?shortAgo(c.rot.last).replace(" ago",""):"new"}</span></button>`; }).join("")
+    : `<div class="rotempty">Open a collection and press <b>+ In Rotation</b>. Once you've practised it, it moves to the bottom.</div>`; }
+function syncRotBtn(col){ const b=$("#rotBtn"); if(!b||!col) return; const on=!!col.rot; b.setAttribute("aria-pressed",on);
+  b.textContent=on?"✓ In Rotation":"+ In Rotation"; b.title=on?"In your rotation. Click to take it out":"Add this collection to your practice rotation"; }
 function listPieces(){
   let arr=S.pieces.filter(p=>p.xml); const v=S.view; let col=null;
   if(v.list==="recent") arr=arr.filter(p=>p.lastPlayed).sort((a,b)=>b.lastPlayed-a.lastPlayed);
@@ -1510,9 +1547,10 @@ function renderLibrary(){
   $("#smartList").innerHTML=smart.map(([id,n,c])=>`<button class="navitem" data-list="${id}" aria-current="${v.list===id}"><span class="ico" aria-hidden="true">${ICON[id]}</span><span>${n}</span><span class="count">${c}</span></button>`).join("")
     +(()=>{ const d=(S.settings.sr&&S.settings.sr.days&&S.settings.sr.days[srToday()])||{scores:[]}; const n=Math.min(d.scores.length,SR_READS); return `<button class="navitem srnav${n<SR_READS?" due":""}" data-sr="1" title="Daily sight reading"><span class="ico" aria-hidden="true">◉</span><span>Sight reading</span><span class="count">${n<SR_READS?`${n}/${SR_READS} today`:"✓ today"}</span></button>`; })()
     +`<button class="navitem" data-stats="1" title="Practice time by day, week and month"><span class="ico" aria-hidden="true">▤</span><span>Practice stats</span><span class="count">${wkS?fmtDur(wkS)+" this wk":""}</span></button>`;
+  renderRotNav();
   const colLast=c=>{ let t=0; for(const id of c.pieceIds){ const p=S.pieces.find(p=>p.id===id); if(p&&p.lastPlayed>t) t=p.lastPlayed; } return t; };
   // most recently practised collection first; ones you haven't touched yet follow, newest first
-  $("#colList").innerHTML=[...S.collections].sort((a,b)=>(colLast(b)-colLast(a))||((b.created||0)-(a.created||0))).map(c=>{ const pr=colProgress(c), pct=Math.round(pr.pct*100); return `<button class="navitem colbar${pr.n&&pr.done===pr.n?" full":""}" data-list="${c.id}" aria-current="${v.list===c.id}" style="--hue:${hueOf(c.id)};--pct:${pct}%" title="${esc(c.name)}: ${pct}% learned · ${pr.done} of ${pr.n} done"><span class="fill" aria-hidden="true"></span><span class="sw"></span><span class="nm">${esc(c.name)}</span><span class="count">${pr.n&&pr.done===pr.n?"✓ ":""}${pr.n}</span></button>`; }).join("")||`<div class="note" style="padding:0 10px">Group pieces into collections like “Warm-ups” or “Bebop Hanon”.</div>`;
+  $("#colList").innerHTML=[...S.collections].sort((a,b)=>(colLast(b)-colLast(a))||((b.created||0)-(a.created||0))).map(c=>{ const pr=colProgress(c), pct=Math.round(pr.pct*100); return `<button class="navitem colbar${pr.n&&pr.done===pr.n?" full":""}" data-list="${c.id}" aria-current="${v.list===c.id}" style="--hue:${hueOf(c.id)};--pct:${pct}%" title="${esc(c.name)}: ${pct}% learned · ${pr.done} of ${pr.n} done"><span class="fill" aria-hidden="true"></span><span class="sw"></span><span class="nm">${esc(c.name)}</span>${c.rot?'<span class="rotmark" title="In Rotation">⟳</span>':""}<span class="count">${pr.n&&pr.done===pr.n?"✓ ":""}${pr.n}</span></button>`; }).join("")||`<div class="note" style="padding:0 10px">Group pieces into collections like “Warm-ups” or “Bebop Hanon”.</div>`;
   const home= v.list==="home"&&!v.q&&!v.tag;
   if(home){ S.selecting=false; S.sel.clear(); }
   const {arr,col}=listPieces();
@@ -1525,7 +1563,7 @@ function renderLibrary(){
   renderBulk(arr,col);
   if(home){ $("#pieceList").className="tiles"; $("#pieceList").innerHTML=homeTiles(); return; }
   $("#pieceList").className="list";
-  $("#colActs").hidden=!col; $("#routineBtn").disabled=!col||!arr.length;
+  $("#colActs").hidden=!col; syncRotBtn(col); $("#routineBtn").disabled=!col||!arr.length;
   const sortSel=$("#sort"); sortSel.querySelector('[value="manual"]').disabled=!col; if(!col&&v.sort==="manual"){ v.sort="title"; } sortSel.value=v.sort;
   const tags=[...new Set(S.pieces.flatMap(p=>p.tags||[]))].sort();
   $("#tagChips").innerHTML=tags.length?tags.map(t=>`<button class="chip" data-tag="${esc(t)}" aria-pressed="${v.tag===t}">${esc(t)}</button>`).join(""):"";
@@ -1637,6 +1675,8 @@ $("#bulkBar").onclick=async e=>{
   if(act==="delete"){ sheet(`<h2>Delete ${ids.length} piece${ids.length===1?"":"s"}?</h2><p>This removes ${ids.length===1?"it":"them"} and ${ids.length===1?"its":"their"} score history and medals from your library on every synced device.${col?" To only take them out of this collection, use “Remove from collection” instead.":""}</p><div class="row end"><button class="btn" data-close>Cancel</button><button class="btn danger" id="bdOk">Delete ${ids.length}</button></div>`);
     $("#bdOk").onclick=async()=>{ await deletePieces(chosen); closeSheet(); S.sel.clear(); toast(`Deleted ${ids.length} piece${ids.length===1?"":"s"}`); renderLibrary(); }; }
 };
+$("#rotBtn").onclick=async()=>{ const col=S.collections.find(c=>c.id===S.view.list); if(!col) return; const on=!col.rot; await setRot(col,on); toast(on?`${col.name} added to ${ROT_NAME}`:`${col.name} taken out of ${ROT_NAME}`); renderLibrary(); };
+$("#rotNav").onclick=e=>{ const b=e.target.closest("[data-list]"); if(b) goList(b.dataset.list); };
 $("#smartList").onclick=$("#colList").onclick=e=>{ if(e.target.closest("[data-stats]")){ openStats(); return; } if(e.target.closest("[data-sr]")){ openSR(); return; } const b=e.target.closest("[data-list]"); if(!b) return; goList(b.dataset.list); };
 function goList(id){ S.view.list=id; S.view.tag=null; S.view.q=""; $("#search").value=""; S.selecting=false; S.sel.clear(); const col=S.collections.find(c=>c.id===id); S.view.sort=col?"manual":(id==="recent"?"recent":"title"); renderLibrary(); $(".main").scrollTop=0; }
 function chooseNewCollection(){
@@ -1723,7 +1763,8 @@ function logSession(r){
   try{ const p=S.cur; if(!p||p.transient||!r||!r.startedAt||!(r.notes>0)) return;
     const s=Math.min(1800,(Date.now()-r.startedAt)/1000); if(s<3) return;
     if(!p.sessionsSince) p.sessionsSince=r.startedAt;
-    p.sessions=(p.sessions||[]).concat({d:r.startedAt,s:Math.round(s),m:S.mode}).slice(-4000); savePiece(p); }
+    p.sessions=(p.sessions||[]).concat({d:r.startedAt,s:Math.round(s),m:S.mode}).slice(-4000); savePiece(p);
+    rotBump(p); } // practised: its rotation collections go to the back
   catch(e){ console.warn("logSession",e); } }
 function practiceEntries(){
   const out=[];
